@@ -41,11 +41,16 @@ jobs:
           images: ${{ env.IMAGE }}
           labels: |
             io.colophon.pagefind-version=${{ steps.pin.outputs.version }}
+          # A tag push publishes the tag name verbatim, so the git tag, the
+          # COLOPHON_VERSION a reader sets, and the image tag a Dockerfile
+          # names are one string. The semver type is deliberately absent: it
+          # would also publish the floating 0.1 and 0 tags, which have no
+          # meaning for an image whose whole point is a pinned indexer.
           tags: |
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
             type=ref,event=pr
             type=sha,format=short,prefix=sha-
-            type=semver,pattern={{version}}
+            type=ref,event=tag
       - name: Build
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:

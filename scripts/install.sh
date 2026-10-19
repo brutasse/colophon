@@ -19,7 +19,7 @@
 # Example:
 #
 #   curl -fsSL https://raw.githubusercontent.com/brutasse/colophon/main/scripts/install.sh \
-#     | COLOPHON_VERSION=1.5.2 sh
+#     | COLOPHON_VERSION=v0.1.0 sh
 set -eu
 
 say() {

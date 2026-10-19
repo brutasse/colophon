@@ -49,7 +49,7 @@ to the shell that runs the script, because a pipe passes only the script text:
 
 ```
 curl -fsSL https://raw.githubusercontent.com/brutasse/colophon/main/scripts/install.sh \
-  | COLOPHON_VERSION=1.5.2 COLOPHON_INSTALL_DIR="$HOME/bin" sh
+  | COLOPHON_VERSION=v0.1.0 COLOPHON_INSTALL_DIR="$HOME/bin" sh
 ```
 
 Release binaries exist for `linux/amd64`, `linux/arm64`, `darwin/amd64`,
@@ -282,7 +282,7 @@ Nothing is downloaded when you build from it, so it works behind a network
 policy that blocks releases-hosting sites:
 
 ```
-FROM ghcr.io/brutasse/colophon:1.5.2
+FROM ghcr.io/brutasse/colophon:v0.1.0
 COPY docs/ /site/
 RUN colophon build --check --src source --out _site
 ```
@@ -295,11 +295,12 @@ docker run --rm -v "$PWD:/site" -w /site ghcr.io/brutasse/colophon build --check
 
 The image is built for `linux/amd64` and `linux/arm64`, which is as far as
 Pagefind publishes releases; `io.colophon.pagefind-version` labels which
-indexer went in. The image tag follows the git ref: `latest` and `sha-<sha>` on
-`main`, the version on a `v*` tag. The version, release target, and checksum
-come from `pagefind.go` through `scripts/pagefind_pin.sh`, so bumping the
-indexer means editing that one table and rebuilding the image — the image can
-never ship an indexer its own `colophon` would reject.
+indexer went in. The image tag follows the git ref: `latest` and `sha-<sha>`
+on `main`, and the tag name on a `v*` tag. A `FROM` line and the release tag
+are then the same string. The version, release target, and checksum come from
+`pagefind.go` through `scripts/pagefind_pin.sh`, so bumping the indexer means
+editing that one table and rebuilding the image. The image can never ship an
+indexer its own `colophon` would reject.
 
 The image runs as root, which suits a build stage; pass `--user` or a `USER`
 line to run unprivileged, which still reads the cached indexer.
