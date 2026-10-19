@@ -7,12 +7,19 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// version is stamped into the release binaries by the release workflow with
+// -ldflags -X main.version; a build from source reports dev. `colophon version`
+// is how an install proves which release it wrote, because the release asset
+// names are fixed and carry no version of their own.
+var version = "dev"
+
 func main() {
 	var src, tagsCSV string
 
 	root := &cobra.Command{
-		Use:   "colophon",
-		Short: "Markdown docs site builder",
+		Use:     "colophon",
+		Short:   "Markdown docs site builder",
+		Version: version,
 		Long: "colophon builds a documentation site from the markdown\n" +
 			"corpus under --src. Link contract: links to site pages are written as\n" +
 			"file-relative .md paths (plus an optional #fragment) so they navigate\n" +
@@ -87,7 +94,21 @@ func main() {
 	}
 	serve.Flags().String("http", "127.0.0.1:8000", "listen address")
 
-	root.AddCommand(build, serve)
+	// cobra adds the --version flag on its own but no version command, and
+	// scripts/install.sh reads the version back from the binary it installed.
+	ver := &cobra.Command{
+		Use:   "version",
+		Short: "Print the version of this binary",
+		Args:  cobra.NoArgs,
+		Run: func(cmd *cobra.Command, args []string) {
+			fmt.Fprintln(cmd.OutOrStdout(), version)
+		},
+	}
+
+	root.AddCommand(build, serve, ver)
+	// The bare version, with no surrounding text, so a script can compare it
+	// against a release tag.
+	root.SetVersionTemplate("{{.Version}}\n")
 	if err := root.Execute(); err != nil {
 		os.Exit(2) // invocation error; gate failures exit 1 themselves
 	}

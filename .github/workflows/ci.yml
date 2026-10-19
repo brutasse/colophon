@@ -32,6 +32,45 @@ jobs:
           test -f _build/site/_assets/docs.css
           test -f _build/site/_static/logo.svg
           test ! -e _build/site/gated/index.html
+  # The installer readers pipe into a shell, run against an archive built here.
+  # release.yml proves the published one; this proves the script itself, so a
+  # broken install path fails the pull request that broke it instead of failing
+  # a tag push.
+  install:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Install from a local mirror
+        run: |
+          set -eu
+          go build -trimpath -ldflags "-X main.version=0.0.0" -o colophon .
+          mirror=_build/mirror/0.0.0
+          mkdir -p "$mirror"
+          # The archive names and the checksums file a release publishes, laid
+          # out as a download root, so the script runs unchanged.
+          tar -czf "$mirror/colophon-linux-amd64.tar.gz" colophon LICENSE
+          (cd "$mirror" && sha256sum colophon-*.tar.gz > checksums.txt)
+          COLOPHON_URL_BASE="file://$PWD/$mirror" \
+            COLOPHON_INSTALL_DIR=_build/bin sh scripts/install.sh
+          test "$("_build/bin/colophon" version)" = 0.0.0
+      # An installer that refuses a bad download is the point of it, so prove
+      # the refusal too.
+      - name: Install refuses a corrupted archive
+        run: |
+          set -eu
+          mirror=_build/mirror-bad
+          mkdir -p "$mirror"
+          cp _build/mirror/0.0.0/* "$mirror/"
+          printf 'corrupted\n' >> "$mirror/colophon-linux-amd64.tar.gz"
+          if COLOPHON_URL_BASE="file://$PWD/$mirror" \
+            COLOPHON_INSTALL_DIR=_build/bin-bad sh scripts/install.sh; then
+            echo "install.sh accepted an archive that does not match its checksum" >&2
+            exit 1
+          fi
+          test ! -e _build/bin-bad/colophon
   # The indexer is fetched per platform at build time, so the release map, its
   # checksum, and the cache path are only proven on the runner that runs them.
   # macos-latest is arm64, the other release most users land on.

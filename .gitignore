@@ -1,3 +1,5 @@
 # Build output: the CI steps and a local run of the same commands.
 /colophon
 /_build/
+# Release archives: the release workflow's build step, and a local run of it.
+/dist/

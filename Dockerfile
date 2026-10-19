@@ -13,6 +13,10 @@ ARG PAGEFIND_SOURCE=https://github.com/Pagefind/pagefind/releases/download
 # ---------------------------------------------------------------- build
 FROM --platform=$BUILDPLATFORM golang:${GO_VERSION} AS build
 ARG TARGETOS TARGETARCH
+# The same stamp the release binaries carry, so `colophon version` from this
+# image names the ref it was built from instead of claiming to be a source
+# build. A main-branch image therefore prints its branch name.
+ARG VERSION=dev
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod go mod download
@@ -20,7 +24,7 @@ COPY . .
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
-      go build -trimpath -ldflags "-s -w" -o /out/colophon .
+      go build -trimpath -ldflags "-s -w -X main.version=$VERSION" -o /out/colophon .
 
 # -------------------------------------------------------------- indexer
 # Placed at the cache path colophon looks in, keyed by version and platform,

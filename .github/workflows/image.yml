@@ -60,6 +60,7 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             PAGEFIND_VERSION=${{ steps.pin.outputs.version }}
+            VERSION=${{ github.ref_name }}
           cache-from: type=gha,scope=image
           cache-to: type=gha,scope=image,mode=max
           provenance: false

@@ -1,0 +1,151 @@
+name: Release
+
+# Binary publishing happens on a tag, and the install job below installs what
+# that push made public. A wrong asset name, a stale checksums file, or a broken
+# installer therefore fails CI instead of failing the first reader who copies
+# the install line out of the README.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to publish or republish (default: the ref you dispatched from)"
+        required: false
+
+env:
+  # One archive per pair. Every binary is a cross-compile on this Linux runner:
+  # the build needs no cgo, so no macOS or Windows machine is needed to produce
+  # its binary.
+  PLATFORMS: linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64
+
+jobs:
+  binaries:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # create the release and upload its assets
+    outputs:
+      version: ${{ steps.tag.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Empty for a tag push, which is already the ref CI checks out; set
+          # only when a run is dispatched by hand for one tag.
+          ref: ${{ github.event.inputs.tag }}
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Release tag
+        id: tag
+        env:
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          set -eu
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+      # Fixed asset names, with no version in them: that is what lets
+      # scripts/install.sh reach the newest release through the stable
+      # releases/latest/download URL, with no API call and no access token. The
+      # stamped version inside each binary records which release it holds.
+      - name: Build the archives
+        run: |
+          set -eu
+          ldflags="-s -w -X main.version=${{ steps.tag.outputs.version }}"
+          for platform in $PLATFORMS; do
+            os=${platform%/*}
+            arch=${platform#*/}
+            ext=tar.gz
+            binary=colophon
+            if [ "$os" = windows ]; then
+              ext=zip
+              binary=colophon.exe
+            fi
+            stage=dist/stage-$os-$arch
+            mkdir -p "$stage"
+            CGO_ENABLED=0 GOOS=$os GOARCH=$arch \
+              go build -trimpath -ldflags "$ldflags" -o "$stage/$binary" .
+            # The licence travels with the binary it covers, as it does inside
+            # the container image.
+            cp LICENSE "$stage/LICENSE.txt"
+            case $ext in
+              tar.gz) tar -C "$stage" -czf "dist/colophon-$os-$arch.tar.gz" "$binary" LICENSE.txt ;;
+              zip) (cd "$stage" && zip -q -X "../colophon-$os-$arch.zip" "$binary" LICENSE.txt) ;;
+            esac
+            rm -rf "$stage"
+          done
+          (cd dist && sha256sum colophon-* > checksums.txt)
+          (cd dist && sha256sum -c checksums.txt)
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -eu
+          # A semver prerelease tag must not become `latest`, which is the URL
+          # the installer uses when no version is given.
+          set --
+          case $TAG in
+            *-*) set -- --prerelease ;;
+          esac
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            # A hand-dispatched re-run replaces the assets of a release that
+            # already exists.
+            gh release upload "$TAG" dist/checksums.txt dist/colophon-* --clobber
+          else
+            # gh's --verify-tag is deliberately absent: it publishes only when
+            # every check on the tag's commit is already green, and image.yml
+            # starts on this same push, so the check that belongs to the image
+            # would still be running here. A tag is cut from main, where ci.yml
+            # already ran, so the gate lives on the branch.
+            gh release create "$TAG" --generate-notes "$@" \
+              dist/checksums.txt dist/colophon-*
+          fi
+
+  # The release, not the workspace that built it: the download URL is what
+  # readers use. windows/amd64 is the one archive this does not install; its
+  # checksum is proven above, and scripts/install.sh covers Git Bash and MSYS2.
+  install:
+    needs: binaries
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install the published release
+        env:
+          COLOPHON_VERSION: ${{ needs.binaries.outputs.version }}
+          COLOPHON_INSTALL_DIR: ${{ runner.temp }}/bin
+        run: |
+          set -eu
+          sh scripts/install.sh
+          got=$("$COLOPHON_INSTALL_DIR/colophon" version)
+          if [ "$got" != "${COLOPHON_VERSION#v}" ]; then
+            echo "installed binary reports version $got, expected ${COLOPHON_VERSION#v}" >&2
+            exit 1
+          fi
+      # End to end through the binary a reader installs: the archive's own
+      # contents, and the Pagefind release this platform downloads.
+      - name: Build the test site with the installed binary
+        env:
+          COLOPHON_INSTALL_DIR: ${{ runner.temp }}/bin
+        run: |
+          set -eu
+          export PATH="$COLOPHON_INSTALL_DIR:$PATH"
+          (cd testdata/site && colophon build --check --src source --out ../../_build/site-install)
+          test -d _build/site-install/pagefind
+          grep -q pagefind-modal _build/site-install/index.html
+      # The README tells readers to pipe this URL into a shell, so the URL is
+      # checked here rather than by whoever reads the page next.
+      - name: Check the README install URL
+        run: |
+          set -eu
+          url=$(grep -o 'https://raw\.githubusercontent\.com[^ "`]*install\.sh' README.md | head -1)
+          if [ -z "$url" ]; then
+            echo "README.md names no install script URL" >&2
+            exit 1
+          fi
+          curl -fsI "$url" > /dev/null
