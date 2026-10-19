@@ -1,0 +1,305 @@
+# colophon
+
+A documentation site builder. One Go binary turns a Markdown corpus into a
+static HTML site with sidebar navigation, breadcrumbs, prev/next links, a
+right-hand "On this page" rail, and full-text search. It renders with
+[petroglyph](https://github.com/brutasse/petroglyph), ships its stylesheet,
+[Mermaid](https://mermaid.js.org), and
+[MathJax](https://www.mathjax.org) inside the binary, and downloads the
+[Pagefind](https://pagefind.app) indexer for your platform on the first build
+that needs it. You need a Go toolchain and nothing else to build a site, and
+once the indexer is cached the whole build works offline.
+
+## Features
+
+- Renders a directory tree of Markdown into the same tree of HTML, and keeps
+  every URL relative so the corpus stays browsable and editable on GitHub.
+- Reads plain GitHub Flavored Markdown: alerts, tables, fenced code, Mermaid,
+  and math need no special syntax.
+- Builds navigation from the `nav: list` pages, then derives breadcrumbs, the
+  sidebar, and prev/next links from that one tree.
+- Gates the build on a link check: broken links, dead anchors, unreachable
+  pages, and link forms that break GitHub navigation all fail `build --check`.
+- Ships the search index: Pagefind runs after the render, so search works on a
+  static site with no backend.
+- Publishes a multi-arch container base image with that indexer already cached,
+  so a site build in CI needs no network.
+- Serves a dev loop that rebuilds one page per save and reloads the browser.
+- Sanitizes raw HTML on every page with petroglyph's display policy.
+- Loads Mermaid and MathJax only on pages that use them.
+
+## Install
+
+```
+go install github.com/brutasse/colophon@latest
+```
+
+Building from this repository needs Go 1.27.2 or later.
+
+## Quick start
+
+colophon reads the site config from `colophon.conf` in the working directory,
+and the pages from `--src`:
+
+```
+colophon.conf
+source/
+  index.md          # the root page: its nav: list defines the navigation
+  guide/
+    index.md
+    install.md
+```
+
+Then run:
+
+```
+colophon build                       # render into _build/html
+colophon build --check               # the same build, plus the CI gate
+colophon serve                       # http://127.0.0.1:8000 with live reload
+colophon build --src docs --out site --tags internal
+```
+
+## Site config
+
+`colophon.conf` holds one `key: value` pair per line. Lines that start with
+`#` are comments. A missing key means the default, and colophon ignores
+a key it does not know, which keeps a config shared with another tool usable.
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `title` | `Docs` | Site name in the `<title>` tag and the sidebar brand |
+| `home-label` | `Docs` | Text of the first breadcrumb |
+| `edit-base` | none | Base URL of the "Edit this page" link; no key means no link |
+| `base-url` | none | Public URL of this site; links to it are reported as non-portable |
+| `copyright` | none | Footer line; `{year}` becomes the build year |
+| `logo` | none | File under `--src`, served at the same root-relative path |
+| `favicon` | none | File under `--src`, served at the same root-relative path |
+| `accent` | theme blue | Hex colour override for the light theme |
+| `accent-dark` | theme blue | Hex colour override for the dark theme |
+| `tags` | `projects=projects` | Comma-separated `name=dir` pairs of gated subtrees |
+| `iframe-hosts` | none | Comma-separated domains whose `<iframe>` embeds keep their `src` |
+
+An invalid value fails the build instead of shipping a broken page or a looser
+sanitizer. Colophon rejects a `logo` or `favicon` file that is not under
+`--src`, an `accent` that is not a hex colour, and an `iframe-hosts` entry that
+is not a domain.
+
+### Gated subtrees
+
+A gated subtree holds content that another repository owns, so its link
+problems never fail your build. Colophon excludes it from the build unless you
+pass its tag: `--tags internal` builds the directory that `tags` maps to
+`internal`.
+
+## Pages
+
+Pages carry optional front matter between `---` lines:
+
+| Key | Meaning |
+| --- | --- |
+| `title` | Page title; the first heading is the default |
+| `toc` | `true` or a depth: insert a table of contents after the first `<h1>` |
+| `math` | `true`: this page uses math, so ship MathJax |
+| `nav` | `list`: the top-level bullet list of this page is its child navigation |
+| `fragment` | `true`: the file is inlined by include comments and never built as a page; implies `orphan` |
+| `orphan` | `true`: nothing links to this page on purpose, so the check gate accepts it |
+
+Colophon ignores every other key, which keeps front matter copied from another
+generator harmless.
+
+Navigation comes from those lists alone. The pages in a page's top-level bullet
+list are its children, and `index.md` is the root of the tree. A page with no
+list has no children. Colophon reports a page that is outside the tree and that
+no other page links to: it builds, but no reader reaches it. `build --check`
+fails on it, and `orphan: true` says a page stays unlinked on purpose.
+
+### Links
+
+Write a link to another page as a file-relative `.md` path, with an optional
+`#fragment`: `[install](install.md#linux)`. The builder rewrites it to `.html`
+at render time. The same file on GitHub then navigates to the source page. Link
+to an asset with a file-relative path too, never a root-absolute one.
+
+### Fragments
+
+A file whose front matter declares `fragment: true` is a fragment: colophon
+inlines it into the pages that include it and never builds it as a page. Being a
+fragment implies `orphan: true`, so you do not write both. The include comment is
+invisible on GitHub:
+
+```markdown
+<!--colophon:include steps.md-->
+```
+
+Options may follow the path. Colophon strips front matter from a Markdown
+fragment and inlines the rest as prose; `literal`, or `language=` naming a
+fence, ships a file as highlighted code instead:
+
+```markdown
+<!--colophon:include timeout.yaml language=yaml-->
+```
+
+Colophon reports a malformed or unknown option in the page as
+`include unavailable`, so a typo cannot silently drop content.
+
+A Markdown file that an include comment inlines must declare `fragment: true`.
+Without it, colophon also builds the file as a page, so the same prose appears at
+two URLs, and `build --check` fails on it.
+
+### Alerts, code, and diagrams
+
+Notes and warnings are GitHub alerts, and a bold first line gives the alert a
+title:
+
+```markdown
+> [!WARNING]
+> **Restart required**
+>
+> Restart the node.
+```
+
+Everything else is plain GitHub Flavored Markdown. Colophon highlights a fenced
+code block that names a language, and turns a `mermaid` fence into a diagram.
+`$...$` math needs the `math: true` front matter, which ships MathJax with the
+page. To keep an old link target alive when you move a heading, write the
+anchor as raw HTML:
+
+```markdown
+<div id="upgrade-notes"></div>
+```
+
+## The check gate
+
+`colophon build` renders, writes, and reports link problems as warnings, then
+exits 0: a broken link should not stop you from reading the site.
+
+`colophon build --check` turns that report into a gate and exits 1 on:
+
+- a link to a page that no build produces,
+- a link to an anchor that the target page does not define,
+- a page link that uses `.html`, a root-absolute path, or no extension,
+- an absolute link to this same site,
+- a page that no `nav: list` contains and that no other page links to,
+- a file that an include comment inlines but that does not declare
+  `fragment: true`,
+- a page with math that does not declare `math: true`.
+
+For a missing anchor, the report can also print the rewrite it suggests, where
+the fragment differs only by dash collapsing (`old --- anchor` to the slug the
+renderer builds).
+
+## Search
+
+The binary drives the Pagefind indexer, so `colophon build` renders the
+pages, indexes them into `_build/html/pagefind/`, and only then writes the
+search markup into the pages. A page that never gets a bundle ships no search
+UI, and a failing indexer is a warning, not a failed build.
+
+Pagefind is a platform binary, so colophon does not carry one. The first build
+downloads the release for your platform, checks it against a checksum pinned
+in the source, and caches it under the user cache directory
+(`~/.cache/colophon/`, `~/Library/Caches/colophon/` on macOS) for every build
+after that. Nothing is fetched again until the pinned release changes.
+
+Two ways to keep search without reaching for GitHub:
+
+```
+COLOPHON_PAGEFIND=/opt/mirrors/pagefind colophon build  # run this binary instead
+cp -r ~/.cache/colophon <build-host>                    # move the cache itself
+```
+
+Copying the cache only helps a machine with the same OS and CPU, since the
+binary inside it is a platform binary.
+
+A platform with no Pagefind release and a network that will not answer both
+say so and build the site without search. A damaged cache entry is thrown away
+and fetched again. Run `scripts/update_pagefind.sh v1.5.3` to move to a newer
+release; it prints the pinned checksums for `pagefind.go`.
+
+## Container image
+
+`ghcr.io/brutasse/colophon` is a small Alpine image holding `colophon` and the
+Pagefind release for its own architecture at the cache path colophon reads.
+Nothing is downloaded when you build from it, so it works behind a network
+policy that blocks releases-hosting sites:
+
+```
+FROM ghcr.io/brutasse/colophon:1.5.2
+COPY docs/ /site/
+RUN colophon build --check --src source --out _site
+```
+
+Or run it against a checkout:
+
+```
+docker run --rm -v "$PWD:/site" -w /site ghcr.io/brutasse/colophon build --check
+```
+
+The image is built for `linux/amd64` and `linux/arm64`, which is as far as
+Pagefind publishes releases; `io.colophon.pagefind-version` labels which
+indexer went in. The image tag follows the git ref: `latest` and `sha-<sha>` on
+`main`, the version on a `v*` tag. The version, release target, and checksum
+come from `pagefind.go` through `scripts/pagefind_pin.sh`, so bumping the
+indexer means editing that one table and rebuilding the image — the image can
+never ship an indexer its own `colophon` would reject.
+
+The image runs as root, which suits a build stage; pass `--user` or a `USER`
+line to run unprivileged, which still reads the cached indexer.
+
+## Dev server
+
+`colophon serve` watches `--src` and keeps the site in memory:
+
+- a page rebuild takes milliseconds, and the browser reloads over Server-Sent
+  Events,
+- a fragment change or a navigation change rebuilds the whole site,
+- the checker reports the problems of each saved file on the terminal,
+- Pagefind indexes a mirror of the pages in the background, so a reload never
+  waits on search.
+
+## Development
+
+```
+go build ./...                  # compile check
+go build -o colophon .          # the builder
+go test ./...                   # renders testdata/site and testdata/broken
+gofmt -l .
+docker buildx build --platform linux/amd64 --load -t colophon:local .
+```
+
+`testdata/site` is a small corpus that uses every feature above, and
+`build_test.go` asserts on the rendered HTML. `testdata/broken` holds one
+problem per check rule, so a rule that stops firing fails a test. Two workflows
+run on push and pull request:
+
+- `ci.yml` builds the fixture with `colophon build --check` on linux and on
+  macOS, which runs the CLI, the check gate, and the indexer download end to
+  end,
+- `image.yml` builds the container image for both architectures, pushes it on
+  `main` and on tags, and then builds the fixture from the pushed image with
+  `--network=none`, so a cache path that stops matching colophon fails CI
+  rather than quietly shipping search-less sites.
+
+The first push to ghcr.io creates the package as private: flip it to public in
+the repository's package settings before the image is usable from another
+repository.
+
+## Vendored assets
+
+| File | Upstream | Licence |
+| --- | --- | --- |
+| `assets/vendor/mermaid.min.js` | [Mermaid](https://mermaid.js.org) | MIT (`assets/MERMAID-LICENSE.txt`) |
+| `assets/vendor/tex-svg.js` | [MathJax](https://www.mathjax.org) | MIT (`assets/MATHJAX-LICENSE.txt`) |
+
+The Pagefind indexer is not vendored; colophon keeps
+`assets/PAGEFIND-LICENSE.txt` and writes it into the download cache beside the
+binary it describes.
+
+`assets/docs.css` and `assets/chroma.css` are part of this project. This
+repository commits the two vendored files, so `go build` needs no download
+step, and `go test` needs no network either: the indexer is fetched by
+`colophon build`, not by the toolchain.
+
+## Licence
+
+MIT. See [LICENSE](LICENSE).

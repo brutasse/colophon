@@ -1,0 +1,91 @@
+name: Image
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  IMAGE: ghcr.io/brutasse/colophon
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # Only to run the arm64 image below: the build itself is a native
+      # cross-compile, so no emulator touches the Go compiler.
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+        with:
+          platforms: arm64
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Login to ghcr.io
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Pinned indexer version
+        id: pin
+        run: echo "version=$(scripts/pagefind_pin.sh linux/amd64 version)" >> "$GITHUB_OUTPUT"
+      - name: Image metadata
+        id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ${{ env.IMAGE }}
+          labels: |
+            io.colophon.pagefind-version=${{ steps.pin.outputs.version }}
+          tags: |
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=ref,event=pr
+            type=sha,format=short,prefix=sha-
+            type=semver,pattern={{version}}
+      - name: Build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          # A pull request builds one architecture and loads it, because a
+          # multi-arch build cannot be loaded into the local daemon for the
+          # smoke test below.
+          platforms: ${{ github.event_name == 'pull_request' && 'linux/amd64' || 'linux/amd64,linux/arm64' }}
+          push: ${{ github.event_name != 'pull_request' }}
+          load: ${{ github.event_name == 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            PAGEFIND_VERSION=${{ steps.pin.outputs.version }}
+          cache-from: type=gha,scope=image
+          cache-to: type=gha,scope=image,mode=max
+          provenance: false
+
+      # The point of the image is that a site builds with no network, so the
+      # smoke test runs with the network switched off and asserts the indexer
+      # ran: a missing _build/smoke/pagefind means the cache inside the image
+      # did not line up with what colophon looks for.
+      - name: Smoke test offline
+        run: |
+          set -eu
+          ref=$(echo "${{ steps.meta.outputs.tags }}" | head -1)
+          archs="amd64"
+          [ "${{ github.event_name }}" = pull_request ] || archs="amd64 arm64"
+          for arch in $archs; do
+            rm -rf "_build/smoke-$arch"
+            mkdir -p "_build/smoke-$arch"
+            # --user keeps the rendered site owned by the CI user instead of
+            # root, and doubles as proof that an arbitrary uid can read the
+            # baked indexer cache.
+            docker run --rm --network=none --platform "linux/$arch" \
+              --user "$(id -u):$(id -g)" \
+              -v "$PWD/testdata/site:/site:ro" \
+              -v "$PWD/_build/smoke-$arch:/out" \
+              "$ref" build --src source --out /out
+            test -d "_build/smoke-$arch/pagefind"
+            test -f "_build/smoke-$arch/_assets/docs.css"
+            grep -q pagefind-modal "_build/smoke-$arch/index.html"
+          done

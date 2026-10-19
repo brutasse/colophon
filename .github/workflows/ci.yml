@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Format
+        run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+      - name: Vet
+        run: go vet ./...
+      - name: Test
+        run: go test ./...
+      - name: Build
+        run: go build -o colophon .
+      # End to end on the fixture site: the CLI, the colophon.conf parser, the
+      # check gate, the embedded assets, and the search indexer download.
+      - name: Build the test site
+        run: |
+          (cd testdata/site && ../../colophon build --check --src source --out ../../_build/site)
+          test -d _build/site/pagefind
+          grep -q pagefind-modal _build/site/index.html
+          grep -q 'src="https://embed.example.com/doc/1"' _build/site/embeds.html
+          test -f _build/site/_assets/docs.css
+          test -f _build/site/_static/logo.svg
+          test ! -e _build/site/gated/index.html
+  # The indexer is fetched per platform at build time, so the release map, its
+  # checksum, and the cache path are only proven on the runner that runs them.
+  # macos-latest is arm64, the other release most users land on.
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Test
+        run: go test ./...
+      - name: Build the test site
+        run: |
+          go build -o colophon .
+          (cd testdata/site && ../../colophon build --src source --out ../../_build/site-macos)
+          test -d _build/site-macos/pagefind
+          grep -q pagefind-modal _build/site-macos/index.html

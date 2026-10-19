@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script>if (localStorage.theme) document.documentElement.dataset.theme = localStorage.theme;</script>
+<title>{{.Title}} · {{.SiteTitle}}</title>
+{{if .Favicon}}<link rel="icon" href="{{.Favicon}}">{{end}}
+<link rel="stylesheet" href="/_assets/docs.css">
+<link rel="stylesheet" href="/_assets/chroma.css">
+{{if .AccentCSS}}<style>{{.AccentCSS}}</style>{{end}}
+{{if .Search}}<link rel="stylesheet" href="/pagefind/pagefind-component-ui.css">
+<script type="module" src="/pagefind/pagefind-component-ui.js"></script>{{end}}
+{{if .Math}}<script>window.MathJax = {tex: {inlineMath: [["\\(", "\\)"]], displayMath: [["\\[", "\\]"]]}, options: {skipHtmlTags: ["script","noscript","style","textarea","pre","code"]}};</script>
+<script defer src="/_assets/vendor/tex-svg.js"></script>{{end}}
+{{if .Mermaid}}<script defer src="/_assets/vendor/mermaid.min.js" onload="mermaid.initialize({startOnLoad: true, securityLevel: 'strict'})"></script>{{end}}
+{{if .Dev}}<script>new EventSource("/sse").onmessage = function () { location.reload(); };</script>{{end}}
+</head>
+<body class="docs">
+<div class="layout">
+<nav class="sidebar" id="sidebar">
+<a class="brand" href="/index.html">{{if .Logo}}<img src="{{.Logo}}" alt="{{.SiteTitle}}">{{else}}{{.SiteTitle}}{{end}}</a>
+{{if .Search}}<div class="search-row"><pagefind-modal-trigger placeholder="Search docs"></pagefind-modal-trigger></div>{{end}}
+<div class="navlist">{{.Sidebar}}</div>
+<button class="theme-toggle" type="button" aria-label="Toggle color theme"></button>
+</nav>
+<div class="scrim" aria-hidden="true"></div>
+<main>
+<div class="crumbs"><button class="nav-toggle" type="button" aria-label="Toggle navigation" aria-controls="sidebar" aria-expanded="false">&#9776;</button><span class="crumbs-path">{{.Crumbs}}</span></div>
+{{if .TOC}}<nav class="toc" aria-label="On this page">{{.TOC}}</nav>{{end}}
+<article>{{.Content}}</article>
+<nav class="prevnext">{{.PrevNext}}</nav>
+<footer class="pagefoot">{{if .EditBase}}<a href="{{.EditBase}}/{{.EditPath}}">Edit this page</a>{{end}}{{if .Copyright}}<span>© {{.Copyright}}</span>{{end}}</footer>
+</main>
+</div>
+{{if .Search}}<pagefind-modal reset-on-close></pagefind-modal>{{end}}
+<script>(function(){
+var btn=document.querySelector(".theme-toggle");if(!btn)return;
+var next={"system":"light","light":"dark","dark":"system"};
+var glyph={"system":"\u25d0","light":"\u2600","dark":"\u263e"};
+function state(){return localStorage.theme||"system";}
+function paint(){var s=state();btn.textContent=glyph[s]+" "+s;btn.title="theme: "+s+" \u2014 click for "+next[s];}
+btn.onclick=function(){var n=next[state()];
+if(n==="system"){delete localStorage.theme;delete document.documentElement.dataset.theme;}
+else{localStorage.theme=n;document.documentElement.dataset.theme=n;}
+paint();};
+paint();})();</script>
+<script>(function(){
+var btn=document.querySelector(".nav-toggle");if(!btn)return;
+function open(o){document.body.classList.toggle("nav-open",o);btn.setAttribute("aria-expanded",o);}
+btn.onclick=function(){open(!document.body.classList.contains("nav-open"));};
+document.querySelector(".scrim").onclick=function(){open(false);};
+document.getElementById("sidebar").addEventListener("click",function(e){if(e.target.closest("a"))open(false);});
+document.addEventListener("keydown",function(e){if(e.key==="Escape")open(false);});})();</script>
+{{if .TOC}}<script>(function(){
+var rail=document.querySelector(".toc");if(!rail)return;
+var main=document.querySelector("main"),links=[].slice.call(rail.querySelectorAll("a")),
+heads=links.map(function(a){return document.getElementById(decodeURIComponent(a.hash.slice(1)));});
+function sync(){var top=main.getBoundingClientRect().top,act=-1;
+for(var i=0;i<heads.length;i++){if(heads[i]&&heads[i].getBoundingClientRect().top-top<=64)act=i;}
+links.forEach(function(l,i){l.classList.toggle("active",i===act);});}
+main.addEventListener("scroll",sync,{passive:true});sync();})();</script>{{end}}
+</body>
+</html>

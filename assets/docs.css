@@ -1,0 +1,170 @@
+:root,
+[data-theme="light"] {
+  --bg: #ffffff; --fg: #24292f; --muted: #57606a; --line: #d8dee4;
+  --accent: #0969da; --link: #0969da; --code-bg: #f6f8fa; --sidebar-bg: #fbfbfb;
+  --alert-note: #0969da; --alert-tip: #1a7f37; --alert-important: #8250df;
+  --alert-warning: #9a6700; --alert-caution: #cf222e;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0d1117; --fg: #e6edf3; --muted: #8d96a0; --line: #30363d;
+    --accent: #4493f8; --link: #4493f8; --code-bg: #161b22; --sidebar-bg: #10151c;
+    --alert-note: #4493f8; --alert-tip: #3fb950; --alert-important: #a371f7;
+    --alert-warning: #d29922; --alert-caution: #f85149;
+  }
+}
+[data-theme="dark"] {
+  --bg: #0d1117; --fg: #e6edf3; --muted: #8d96a0; --line: #30363d;
+  --accent: #4493f8; --link: #4493f8; --code-bg: #161b22; --sidebar-bg: #10151c;
+  --alert-note: #4493f8; --alert-tip: #3fb950; --alert-important: #a371f7;
+  --alert-warning: #d29922; --alert-caution: #f85149;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body.docs {
+  margin: 0; background: var(--bg); color: var(--fg);
+  font: 16px/1.65 ui-sans-serif, system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+a { color: var(--link); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+.brand {
+  display: flex; align-items: center; background: var(--accent); color: #fff;
+  font-weight: 700; font-size: 1.05rem; padding: .65rem 1.2rem;
+}
+.brand img { height: 1.6rem; display: block; }
+.brand:hover { color: #fff; text-decoration: none; }
+
+.layout { display: flex; max-width: 82rem; margin: 0 auto; }
+.sidebar {
+  flex: 0 0 19rem; border-right: 1px solid var(--line); background: var(--sidebar-bg);
+}
+.navlist { padding: 1.2rem .8rem 2rem 1rem; font-size: .88rem; }
+.navlist ul { list-style: none; margin: 0; padding-left: 1rem; }
+.navlist > ul { padding-left: 0; }
+.navlist li { margin: .15rem 0; }
+.navlist a { color: var(--fg); display: block; padding: .1rem .3rem; border-radius: 4px; }
+.navlist a:hover { background: var(--code-bg); text-decoration: none; }
+.navlist a.active { color: var(--accent); font-weight: 600; background: var(--code-bg); }
+.theme-toggle {
+  padding: .55rem 1.2rem; border: none; border-top: 1px solid var(--line);
+  background: var(--sidebar-bg); color: var(--muted); font: inherit; font-size: .8rem;
+  text-align: left; cursor: pointer;
+}
+.theme-toggle:hover { color: var(--fg); }
+.search-row { padding: .55rem 1rem; border-bottom: 1px solid var(--line); }
+.search-row pagefind-modal-trigger { width: 100%; }
+
+main { flex: 1; min-width: 0; padding: 0 2.5rem 4rem; }
+.crumbs {
+  position: sticky; top: 0; z-index: 5; background: var(--bg); color: var(--muted);
+  font-size: .85rem; padding: .5rem 0; max-width: 52rem;
+  border-bottom: 1px solid var(--line);
+  display: flex; align-items: center; gap: .5rem;
+}
+.crumbs-path { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.nav-toggle {
+  display: none; flex: 0 0 auto; font: inherit; font-size: 1.05rem; line-height: 1;
+  background: none; border: 0; padding: .15rem .4rem; color: var(--fg);
+  border-radius: 4px; cursor: pointer;
+}
+.nav-toggle:hover { background: var(--code-bg); }
+.scrim { display: none; }
+.crumbs a { color: var(--muted); text-decoration: none; }
+.crumbs a:hover { color: var(--fg); text-decoration: underline; }
+.crumbs .sep { margin: 0 .4rem; opacity: .6; }
+.crumbs .here { color: var(--fg); }
+
+.toc {
+  display: none; font-size: .82rem; width: 13rem;
+}
+.toc-title {
+  font-weight: 600; text-transform: uppercase; font-size: .72rem;
+  letter-spacing: .04em; color: var(--muted); margin: 0 0 .4rem;
+}
+.toc a { display: block; color: var(--muted); padding: .12rem 0; text-decoration: none; }
+.toc a:hover { color: var(--fg); }
+.toc a.active { color: var(--accent); font-weight: 600; }
+.toc a.h3 { padding-left: .9rem; }
+article { max-width: 52rem; padding-top: 1.4rem; }
+article h1, article h2, article h3, article h4 { line-height: 1.3; margin: 1.8rem 0 .6rem; }
+article h1 { font-size: 1.8rem; border-bottom: 1px solid var(--line); padding-bottom: .3rem; margin-top: .4rem; }
+article h2 { font-size: 1.4rem; }
+article h3 { font-size: 1.15rem; }
+.heading-anchor { margin-left: .35rem; color: var(--muted); opacity: 0; }
+h1:hover .heading-anchor, h2:hover .heading-anchor, h3:hover .heading-anchor,
+h4:hover .heading-anchor, h5:hover .heading-anchor, h6:hover .heading-anchor { opacity: 1; }
+
+article pre {
+  background: var(--code-bg); border: 1px solid var(--line); border-radius: 6px;
+  padding: .8rem 1rem; overflow-x: auto; font-size: .85rem; line-height: 1.5;
+}
+article code { font: .85em ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace; }
+article :not(pre) > code { background: var(--code-bg); border: 1px solid var(--line); border-radius: 4px; padding: .1em .3em; }
+article pre code { background: none; border: none; padding: 0; }
+.codeblock { margin: 1rem 0; }
+.codeblock pre { margin: 0; }
+.table-wrap { overflow-x: auto; margin: 1rem 0; }
+article table { border-collapse: collapse; font-size: .9rem; }
+article th, article td { border: 1px solid var(--line); padding: .35rem .7rem; text-align: left; vertical-align: top; }
+article th { background: var(--code-bg); }
+article blockquote.markdown-alert { border-left: 4px solid var(--alert-fg, var(--muted)); background: var(--code-bg); padding: .6rem 1rem; margin: 1rem 0; border-radius: 0 6px 6px 0; }
+article blockquote.markdown-alert p:first-child { font-weight: 600; margin-top: 0; }
+/* GitHub alert palette: border + title share the type color */
+blockquote.markdown-alert-note { --alert-fg: var(--alert-note); }
+blockquote.markdown-alert-tip { --alert-fg: var(--alert-tip); }
+blockquote.markdown-alert-important { --alert-fg: var(--alert-important); }
+blockquote.markdown-alert-warning { --alert-fg: var(--alert-warning); }
+blockquote.markdown-alert-caution { --alert-fg: var(--alert-caution); }
+.markdown-alert-title {
+  display: flex; align-items: center; gap: .45rem;
+  font-weight: 600; color: var(--alert-fg, var(--muted)); margin: 0 0 .35rem;
+}
+.markdown-alert-title svg { flex: none; fill: currentColor; }
+
+nav.page-toc { background: var(--code-bg); border: 1px solid var(--line); border-radius: 6px; padding: .6rem 1rem; margin: 1rem 0; font-size: .9rem; }
+nav.page-toc ul { margin: .2rem 0; padding-left: 1.2rem; }
+
+.prevnext { display: flex; justify-content: space-between; gap: 1rem; margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--line); max-width: 52rem; }
+.pagefoot { margin-top: 1.2rem; font-size: .8rem; color: var(--muted); display: flex; justify-content: space-between; gap: 1rem; max-width: 52rem; }
+
+img { max-width: 100%; height: auto; }
+hr { border: none; border-top: 1px solid var(--line); margin: 2rem 0; }
+pre.mermaid { background: #fff; text-align: center; border: 1px solid var(--line); border-radius: 6px; padding: .5rem; }
+pre.mermaid svg { max-width: 100%; height: auto; }
+
+@media (max-width: 60rem) {
+  /* below the fit threshold the nav is an off-canvas drawer behind a hamburger */
+  .sidebar {
+    position: fixed; top: 0; bottom: 0; left: 0; z-index: 30;
+    width: min(19rem, 85vw); border-right: 1px solid var(--line);
+    display: flex; flex-direction: column;
+    transform: translateX(-100%); transition: transform .2s ease;
+  }
+  body.nav-open .sidebar { transform: none; }
+  .navlist { flex: 1; min-height: 0; overflow-y: auto; }
+  .nav-toggle { display: inline-block; }
+  body.nav-open .scrim { display: block; position: fixed; inset: 0; z-index: 20; background: rgba(0, 0, 0, .4); }
+  main { padding: 0 1.2rem 3rem; }
+}
+
+@media (prefers-reduced-motion: reduce) { .sidebar { transition: none; } }
+
+@media (min-width: 60rem) {
+  /* two independently scrollable columns: nav with fixed logo panel, content
+     with sticky crumbs; heading anchors must not hide under the crumbs bar */
+  body.docs { height: 100vh; overflow: hidden; }
+  /* no 82rem cap: the panes must reach the viewport edges so main's
+     scrollbar sits at the far right and the sidebar is flush left */
+  .layout { max-width: none; height: 100vh; }
+  .sidebar { display: flex; flex-direction: column; }
+  .navlist { flex: 1; min-height: 0; overflow-y: auto; }
+  main { overflow-y: auto; scroll-behavior: smooth; scroll-padding-top: 2.6rem; container-type: inline-size; }
+  .toc {
+    position: sticky; top: 2.9rem; float: right;
+    margin: 3.2rem 0 1rem 2rem; padding-left: .9rem; border-left: 1px solid var(--line);
+    max-height: calc(100vh - 4rem); overflow-y: auto;
+  }
+  /* the rail only appears once the pane can hold article + gutter + rail */
+  @container (min-width: 70rem) { .toc { display: block; } }
+}

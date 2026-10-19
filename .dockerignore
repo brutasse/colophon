@@ -1,0 +1,6 @@
+_build/
+.git/
+.github/
+testdata/
+*.tar.gz
+colophon

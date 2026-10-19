@@ -1,0 +1,3 @@
+# Build output: the CI steps and a local run of the same commands.
+/colophon
+/_build/
