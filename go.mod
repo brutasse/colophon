@@ -8,6 +8,7 @@ require (
 	github.com/microcosm-cc/bluemonday v1.0.27
 	github.com/spf13/cobra v1.10.2
 	github.com/yuin/goldmark v1.8.6
+	golang.org/x/mod v0.42.0
 )
 
 require (

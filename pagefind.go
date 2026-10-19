@@ -2,6 +2,7 @@ package main
 
 import (
 	"archive/tar"
+	"archive/zip"
 	"compress/gzip"
 	"context"
 	"crypto/sha256"
@@ -132,7 +133,7 @@ func fetchPagefind(rel pagefindRelease, dst string) error {
 		return err
 	}
 	defer os.Remove(tgz.Name())
-	if err := downloadPagefind(url, tgz, rel.sha256); err != nil {
+	if err := downloadVerified(url, tgz, rel.sha256, "pagefind"); err != nil {
 		tgz.Close()
 		return err
 	}
@@ -165,9 +166,11 @@ func fetchPagefind(rel pagefindRelease, dst string) error {
 	return nil
 }
 
-// downloadPagefind copies url into f while hashing it, so a truncated or
-// swapped tarball fails the sum check instead of reaching the extractor.
-func downloadPagefind(url string, f io.Writer, want string) error {
+// downloadVerified copies url into f while hashing it, so a truncated or
+// swapped download fails the sum check instead of reaching the caller. label
+// names what is being fetched, which is what the reader of the error knows it
+// by: the indexer and a release binary are fetched the same way.
+func downloadVerified(url string, f io.Writer, want, label string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), pagefindDownloadTimeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
@@ -176,18 +179,18 @@ func downloadPagefind(url string, f io.Writer, want string) error {
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("pagefind: %s: %w", url, err)
+		return fmt.Errorf("%s: %s: %w", label, url, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("pagefind: %s: %s", url, resp.Status)
+		return fmt.Errorf("%s: %s: %s", label, url, resp.Status)
 	}
 	sum := sha256.New()
 	if _, err := io.Copy(f, io.TeeReader(resp.Body, sum)); err != nil {
-		return fmt.Errorf("pagefind: %s: %w", url, err)
+		return fmt.Errorf("%s: %s: %w", label, url, err)
 	}
 	if got := hex.EncodeToString(sum.Sum(nil)); got != want {
-		return fmt.Errorf("pagefind: checksum mismatch for %s: want %s, got %s", filepath.Base(url), want, got)
+		return fmt.Errorf("%s: checksum mismatch for %s: want %s, got %s", label, filepath.Base(url), want, got)
 	}
 	return nil
 }
@@ -195,12 +198,46 @@ func downloadPagefind(url string, f io.Writer, want string) error {
 // extractPagefind copies the indexer out of the release tarball. The asset
 // holds one binary at its top level, pagefind or pagefind.exe.
 func extractPagefind(tgz string, dst io.Writer) error {
-	f, err := os.Open(tgz)
+	return extractBinary(tgz, []string{pagefindExe(), "pagefind", "pagefind.exe"}, dst)
+}
+
+// extractBinary copies the first member named in want out of a release
+// archive. Every colophon and pagefind asset is a tar.gz except the Windows
+// release, which is a zip, so both are read here and one call site serves both.
+func extractBinary(archive string, want []string, dst io.Writer) error {
+	f, err := os.Open(archive)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
-	gz, err := gzip.NewReader(f)
+	if !strings.HasSuffix(archive, ".zip") {
+		return extractFromTarGz(f, want, dst)
+	}
+	fi, err := f.Stat()
+	if err != nil {
+		return err
+	}
+	zr, err := zip.NewReader(f, fi.Size())
+	if err != nil {
+		return err
+	}
+	for _, zf := range zr.File {
+		if zf.FileInfo().IsDir() || !memberNamed(want, zf.Name) {
+			continue
+		}
+		rc, err := zf.Open()
+		if err != nil {
+			return err
+		}
+		defer rc.Close()
+		_, err = io.Copy(dst, rc)
+		return err
+	}
+	return missingMember(want)
+}
+
+func extractFromTarGz(r io.Reader, want []string, dst io.Writer) error {
+	gz, err := gzip.NewReader(r)
 	if err != nil {
 		return err
 	}
@@ -209,17 +246,32 @@ func extractPagefind(tgz string, dst io.Writer) error {
 	for {
 		h, err := tr.Next()
 		if errors.Is(err, io.EOF) {
-			return fmt.Errorf("pagefind: no indexer binary in %s", filepath.Base(tgz))
+			return missingMember(want)
 		}
 		if err != nil {
 			return err
 		}
-		name := filepath.Base(h.Name)
-		if h.Typeflag == tar.TypeReg && (name == "pagefind" || name == "pagefind.exe") {
+		if h.Typeflag == tar.TypeReg && memberNamed(want, h.Name) {
 			_, err := io.Copy(dst, tr)
 			return err
 		}
 	}
+}
+
+// memberNamed reports whether an archive entry's own name is one of want, which
+// ignores the directory an asset may pack its binary into.
+func memberNamed(want []string, name string) bool {
+	base := filepath.Base(name)
+	for _, w := range want {
+		if base == w {
+			return true
+		}
+	}
+	return false
+}
+
+func missingMember(want []string) error {
+	return fmt.Errorf("no %s in the release archive", strings.Join(want, " or "))
 }
 
 // writePagefindLicense puts Pagefind's licence text next to the cached binary,
@@ -235,11 +287,17 @@ func writePagefindLicense(dir string) {
 // pagefindCacheDir holds one directory per release and platform, so bumping
 // pagefindVersion or moving between amd64 and arm64 never reuses a binary.
 func pagefindCacheDir(triple string) string {
+	return filepath.Join(cacheRoot(), "pagefind-"+pagefindVersion+"-"+triple)
+}
+
+// cacheRoot is where colophon keeps everything it fetched rather than shipped,
+// so one cache dir holds the indexer and the update check alike.
+func cacheRoot() string {
 	base, err := os.UserCacheDir()
 	if err != nil { // no HOME in the environment: a temp dir is still a cache
 		base = filepath.Join(os.TempDir(), "colophon-cache")
 	}
-	return filepath.Join(base, "colophon", "pagefind-"+pagefindVersion+"-"+triple)
+	return filepath.Join(base, "colophon")
 }
 
 func pagefindExe() string {

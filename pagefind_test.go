@@ -68,8 +68,8 @@ func TestExtractPagefind(t *testing.T) {
 func TestExtractPagefindNoBinary(t *testing.T) {
 	tgz := writeTarballFile(t, pagefindTarball(t, "README.md", "docs only\n"))
 	err := extractPagefind(tgz, io.Discard)
-	if err == nil || !strings.Contains(err.Error(), "no indexer") {
-		t.Errorf("extractPagefind on an archive without a binary: %v, want a no-indexer error", err)
+	if err == nil || !strings.Contains(err.Error(), "no pagefind") {
+		t.Errorf("extractPagefind on an archive without a binary: %v, want a missing-binary error", err)
 	}
 }
 
@@ -82,17 +82,17 @@ func TestDownloadPagefindChecksum(t *testing.T) {
 	defer srv.Close()
 
 	var buf bytes.Buffer
-	if err := downloadPagefind(srv.URL, &buf, hex.EncodeToString(sum[:])); err != nil {
-		t.Fatalf("downloadPagefind with the pinned sum: %v", err)
+	if err := downloadVerified(srv.URL, &buf, hex.EncodeToString(sum[:]), "pagefind"); err != nil {
+		t.Fatalf("downloadVerified with the pinned sum: %v", err)
 	}
 	if !bytes.Equal(buf.Bytes(), content) {
 		t.Errorf("downloaded %d bytes, want %d", buf.Len(), len(content))
 	}
 
 	buf.Reset()
-	err := downloadPagefind(srv.URL, &buf, strings.Repeat("0", 64))
+	err := downloadVerified(srv.URL, &buf, strings.Repeat("0", 64), "pagefind")
 	if err == nil || !strings.Contains(err.Error(), "checksum mismatch") {
-		t.Errorf("downloadPagefind with a wrong sum: %v, want a mismatch error", err)
+		t.Errorf("downloadVerified with a wrong sum: %v, want a mismatch error", err)
 	}
 }
 
@@ -101,9 +101,9 @@ func TestDownloadPagefindStatus(t *testing.T) {
 		http.NotFound(w, r)
 	}))
 	defer srv.Close()
-	err := downloadPagefind(srv.URL, io.Discard, strings.Repeat("0", 64))
+	err := downloadVerified(srv.URL, io.Discard, strings.Repeat("0", 64), "pagefind")
 	if err == nil || !strings.Contains(err.Error(), "404") {
-		t.Errorf("downloadPagefind on 404: %v, want the status in the error", err)
+		t.Errorf("downloadVerified on 404: %v, want the status in the error", err)
 	}
 }
 

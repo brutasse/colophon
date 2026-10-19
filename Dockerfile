@@ -68,7 +68,10 @@ COPY --from=build /out/colophon /usr/local/bin/
 # and a writable cache directory is what lets colophon re-fetch an indexer it
 # finds damaged.
 COPY --from=indexer --chown=65532:65532 /opt/colophon-cache /opt/colophon-cache
-ENV XDG_CACHE_HOME=/opt/colophon-cache
+# The image's version is its tag, and you move to a newer one by rebuilding, so
+# an availability notice here would only be noise. Self-update is for a binary
+# installed on a machine.
+ENV XDG_CACHE_HOME=/opt/colophon-cache COLOPHON_NO_UPDATE_CHECK=1
 WORKDIR /site
 ENTRYPOINT ["colophon"]
 CMD ["--help"]

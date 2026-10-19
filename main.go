@@ -13,6 +13,15 @@ import (
 // names are fixed and carry no version of their own.
 var version = "dev"
 
+// The update command's state, read by update.go: the flags of a command defined
+// inside main would not reach it, and the environment switches beside these
+// (COLOPHON_NO_UPDATE_CHECK and CI) are read there.
+var (
+	noUpdateCheck   bool
+	updateTo        string
+	updateCheckOnly bool
+)
+
 func main() {
 	var src, tagsCSV string
 
@@ -27,6 +36,7 @@ func main() {
 	}
 	root.PersistentFlags().StringVar(&src, "src", "source", "docs source directory")
 	root.PersistentFlags().StringVar(&tagsCSV, "tags", "", "comma-separated build tags (declared by the tags key in colophon.conf)")
+	root.PersistentFlags().BoolVar(&noUpdateCheck, "no-update-check", false, "do not ask GitHub whether a newer release exists")
 
 	build := &cobra.Command{
 		Use:   "build",
@@ -105,7 +115,40 @@ func main() {
 		},
 	}
 
-	root.AddCommand(build, serve, ver)
+	update := &cobra.Command{
+		Use:   "update",
+		Short: "Replace this binary with a published release",
+		Long: "update installs a published release over the running binary. It asks the\n" +
+			"GitHub releases API which release is newest, downloads the archive for this\n" +
+			"platform, checks it against the sha256 the API publishes for that asset, and\n" +
+			"moves the new binary into place. A binary built from source is refused,\n" +
+			"because no release owns it.\n\n" +
+			"The directory holding this binary must be writable, so an install in\n" +
+			"/usr/local/bin normally needs an administrator.",
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := runUpdate(cmd.OutOrStdout(), updateTo, updateCheckOnly, ""); err != nil {
+				fail(err)
+			}
+			return nil
+		},
+	}
+	update.Flags().BoolVar(&updateCheckOnly, "check", false, "report what is available without installing it")
+	update.Flags().StringVar(&updateTo, "to", "", "install this release tag instead of the newest")
+
+	root.AddCommand(build, serve, ver, update)
+	// The availability check runs before the work, and only where a human is
+	// reading: update and version are about versions already, and help or
+	// completion must not touch the network on the way to answering something
+	// else.
+	root.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
+		switch cmd.Name() {
+		case "update", "version", "help", "completion":
+		default:
+			notice()
+		}
+		return nil
+	}
 	// The bare version, with no surrounding text, so a script can compare it
 	// against a release tag.
 	root.SetVersionTemplate("{{.Version}}\n")

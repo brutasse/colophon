@@ -7,8 +7,8 @@ right-hand "On this page" rail, and full-text search. It renders with
 [Mermaid](https://mermaid.js.org), and
 [MathJax](https://www.mathjax.org) inside the binary, and downloads the
 [Pagefind](https://pagefind.app) indexer for your platform on the first build
-that needs it. The binary is all you need to build a site. Once the indexer is
-cached, the whole build works offline.
+that needs it. The binary is all you need to build a site. Once colophon has
+cached the indexer, the whole build works offline.
 
 ## Features
 
@@ -22,8 +22,8 @@ cached, the whole build works offline.
   pages, and link forms that break GitHub navigation all fail `build --check`.
 - Ships the search index: Pagefind runs after the render, so search works on a
   static site with no backend.
-- Installs as one binary on Linux, macOS, and Windows, with the download
-  verified against the release checksums.
+- Installs as one binary on Linux, macOS, and Windows, verifies each download
+  against a published checksum, and updates itself with `colophon update`.
 - Publishes a multi-arch container base image with that indexer already cached,
   so a site build in CI needs no network.
 - Serves a dev loop that rebuilds one page per save and reloads the browser.
@@ -62,6 +62,37 @@ build from this repository, which needs Go 1.27.2 or later:
 ```
 go install github.com/brutasse/colophon@latest
 ```
+
+### Staying current
+
+```
+colophon update
+```
+
+The command asks the GitHub releases API which release is newest. It downloads
+the archive for your platform and checks it against the checksum GitHub
+publishes for that asset. Then it moves the new binary into place.
+`colophon update --check` reports what is available and installs nothing.
+`colophon update --to 1.4.0` names a release, which is also how you go back to
+an older one. The directory holding the binary must be writable, so an install
+in `/usr/local/bin` normally needs an administrator.
+
+Every other command prints one line when a newer release exists. That check runs
+at most once a day, waits at most two seconds, and prints nothing when it fails.
+It never delays or fails a build. Colophon skips it in CI and when stderr is a
+pipe. A source build never asks, and neither does a run with
+`COLOPHON_NO_UPDATE_CHECK` or `--no-update-check` set.
+
+GitHub allows 60 anonymous API requests an hour per address. Set `GITHUB_TOKEN`
+or `GH_TOKEN` to raise that limit on a shared build host.
+`COLOPHON_RELEASES_API` names a different endpoint, for GitHub Enterprise or an
+internal mirror.
+
+Two installs have another owner. Go owns a binary that
+`go install github.com/brutasse/colophon@latest` placed in your Go bin
+directory, and `colophon update` refuses a source build for the same reason:
+rebuild those. The container image sets `COLOPHON_NO_UPDATE_CHECK=1`, because
+its version is its image tag and you move to a newer one by rebuilding.
 
 ## Quick start
 
@@ -306,18 +337,18 @@ workflows run:
   `main` and on tags, and then builds the fixture from the pushed image with
   `--network=none`, so a cache path that stops matching colophon fails CI
   rather than quietly shipping search-less sites,
-- `release.yml` builds the five release archives on a `v*` tag, publishes them
-  as release assets, and then installs one on linux and on macOS through
-  `scripts/install.sh` and builds the fixture from that binary, so a wrong
-  asset name or a broken installer fails CI rather than failing a reader who
-  copied the install line.
+- `release.yml` builds the five release archives on a `v*` tag and publishes
+  them as release assets. Its install job then installs one on linux and on
+  macOS through `scripts/install.sh` and builds the fixture from that binary. A
+  wrong asset name or a broken installer therefore fails CI rather than a reader
+  who copied the install line.
 
 `ci.yml` also installs a locally packed archive through the same script, so a
 broken installer fails its own pull request rather than a tag push.
 
-The release archives and the installer are both runnable from a checkout: build
-the binaries with `-ldflags "-X main.version=<version>"`, pack them as
-`colophon-<os>-<arch>.tar.gz` with a `checksums.txt` beside them, and point
+The release archives and the installer are both runnable from a checkout. Build
+the binaries with `-ldflags "-X main.version=<version>"` and pack them as
+`colophon-<os>-<arch>.tar.gz`. Put a `checksums.txt` beside them and point
 `COLOPHON_URL_BASE` at that directory with a `file://` URL.
 
 The first push to ghcr.io creates the package as private: flip it to public in

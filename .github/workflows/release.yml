@@ -45,8 +45,10 @@ jobs:
           echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
       # Fixed asset names, with no version in them: that is what lets
       # scripts/install.sh reach the newest release through the stable
-      # releases/latest/download URL, with no API call and no access token. The
-      # stamped version inside each binary records which release it holds.
+      # releases/latest/download URL, with no API call and no access token, and
+      # it is the name `colophon update` selects from the release API. Two
+      # readers, so the names are a contract, not a detail. The stamped version
+      # inside each binary records which release it holds.
       - name: Build the archives
         run: |
           set -eu
