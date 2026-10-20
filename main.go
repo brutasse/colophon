@@ -23,18 +23,17 @@ var (
 )
 
 func main() {
-	var src, tagsCSV string
+	var tagsCSV string
 
 	root := &cobra.Command{
 		Use:     "colophon",
 		Short:   "Markdown docs site builder",
 		Version: version,
-		Long: "colophon builds a documentation site from the markdown\n" +
-			"corpus under --src. Link contract: links to site pages are written as\n" +
-			"file-relative .md paths (plus an optional #fragment) so they navigate\n" +
+		Long: "colophon builds a documentation site from the markdown corpus named by\n" +
+			"the source key in colophon.conf. Link contract: links to site pages are written\n" +
+			"as file-relative .md paths (plus an optional #fragment) so they navigate\n" +
 			"on GitHub; the builder rewrites them to .html at render.",
 	}
-	root.PersistentFlags().StringVar(&src, "src", "source", "docs source directory")
 	root.PersistentFlags().StringVar(&tagsCSV, "tags", "", "comma-separated build tags (declared by the tags key in colophon.conf)")
 	root.PersistentFlags().BoolVar(&noUpdateCheck, "no-update-check", false, "do not ask GitHub whether a newer release exists")
 
@@ -54,10 +53,7 @@ func main() {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out, _ := cmd.Flags().GetString("out")
 			check, _ := cmd.Flags().GetBool("check")
-			site, err := NewSite(src, tagsCSV, ".")
-			if err != nil {
-				fail(err)
-			}
+			site := newSite(cmd, tagsCSV)
 			if err := site.BuildAll(); err != nil {
 				fail(err)
 			}
@@ -85,6 +81,7 @@ func main() {
 	}
 	build.Flags().String("out", "_build/html", "HTML output directory")
 	build.Flags().Bool("check", false, "run the CI gate after building (exit 1 on errors)")
+	configFlag(build)
 
 	serve := &cobra.Command{
 		Use:   "serve",
@@ -92,10 +89,7 @@ func main() {
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			addr, _ := cmd.Flags().GetString("http")
-			site, err := NewSite(src, tagsCSV, ".")
-			if err != nil {
-				fail(err)
-			}
+			site := newSite(cmd, tagsCSV)
 			if err := site.Serve(addr); err != nil {
 				fail(err)
 			}
@@ -103,6 +97,7 @@ func main() {
 		},
 	}
 	serve.Flags().String("http", "127.0.0.1:8000", "listen address")
+	configFlag(serve)
 
 	// cobra adds the --version flag on its own but no version command, and
 	// scripts/install.sh reads the version back from the binary it installed.
@@ -160,4 +155,21 @@ func main() {
 func fail(err error) {
 	fmt.Fprintln(os.Stderr, "colophon:", err)
 	os.Exit(1)
+}
+
+// configFlag and newSite belong to the two commands that build a site. The
+// config file is their entry point, and its absence is what stops a run in a
+// directory that holds no site; version, update, and help read no config, so
+// they keep working anywhere and are given no --config to ignore.
+func configFlag(cmd *cobra.Command) {
+	cmd.Flags().String("config", "colophon.conf", "site config file (its source directory is resolved against this file)")
+}
+
+func newSite(cmd *cobra.Command, tagsCSV string) *Site {
+	conf, _ := cmd.Flags().GetString("config")
+	site, err := NewSite(conf, tagsCSV)
+	if err != nil {
+		fail(err)
+	}
+	return site
 }

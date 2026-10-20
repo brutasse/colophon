@@ -86,11 +86,13 @@ jobs:
             # --user keeps the rendered site owned by the CI user instead of
             # root, and doubles as proof that an arbitrary uid can read the
             # baked indexer cache.
+            # The fixture's colophon.conf is inside the /site mount, so the
+            # build needs no flag to find its source directory.
             docker run --rm --network=none --platform "linux/$arch" \
               --user "$(id -u):$(id -g)" \
               -v "$PWD/testdata/site:/site:ro" \
               -v "$PWD/_build/smoke-$arch:/out" \
-              "$ref" build --src source --out /out
+              "$ref" build --out /out
             test -d "_build/smoke-$arch/pagefind"
             test -f "_build/smoke-$arch/_assets/docs.css"
             grep -q pagefind-modal "_build/smoke-$arch/index.html"

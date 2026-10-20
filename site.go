@@ -73,12 +73,13 @@ type Site struct {
 }
 
 // loadConf reads the flat "key: value" site config (same dialect as page
-// front matter). A missing file means all defaults; malformed contents
-// surface as errors.
-func loadConf(dir string) (map[string]string, error) {
-	b, err := os.ReadFile(filepath.Join(dir, "colophon.conf"))
+// front matter). The file is the entry point every build runs from, so its
+// absence is an error rather than a site of all defaults; malformed contents
+// surface as errors too.
+func loadConf(path string) (map[string]string, error) {
+	b, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
-		return map[string]string{}, nil
+		return nil, fmt.Errorf("%s not found: write that file to build a site here (it must declare source: <dir>)", path)
 	}
 	if err != nil {
 		return nil, err
@@ -87,10 +88,35 @@ func loadConf(dir string) (map[string]string, error) {
 	return conf, nil
 }
 
-func NewSite(src, tagsCSV, confPath string) (*Site, error) {
+// sourceDir resolves the source key against the directory holding the config
+// file, so a run from anywhere builds the site that file describes. The
+// directory is checked here rather than at the first walk so the failure names
+// the key and the file that pointed at it.
+func sourceDir(confPath string, conf map[string]string) (string, error) {
+	v := conf["source"]
+	if v == "" {
+		return "", fmt.Errorf("config %s: no source key (source: <dir> names the markdown corpus)", confPath)
+	}
+	src := filepath.FromSlash(v)
+	if !filepath.IsAbs(src) {
+		src = filepath.Join(filepath.Dir(confPath), src)
+	}
+	if st, err := os.Stat(src); err != nil || !st.IsDir() {
+		return "", fmt.Errorf("config source: %s is not a directory (%s in %s)", src, v, confPath)
+	}
+	return src, nil
+}
+
+// NewSite reads the site described by the config file at confPath, which names
+// the source directory the pages are read from.
+func NewSite(confPath, tagsCSV string) (*Site, error) {
 	conf, err := loadConf(confPath)
 	if err != nil {
-		return nil, fmt.Errorf("config %s/colophon.conf: %w", confPath, err)
+		return nil, err
+	}
+	src, err := sourceDir(confPath, conf)
+	if err != nil {
+		return nil, err
 	}
 	year := time.Now().Format("2006")
 	s := &Site{
@@ -113,9 +139,9 @@ func NewSite(src, tagsCSV, confPath string) (*Site, error) {
 			*key.def = strings.ReplaceAll(v, "{year}", year)
 		}
 	}
-	// logo/favicon name a file under src (copyStatics serves it at the same
-	// root-relative path); a typo fails the build instead of shipping a
-	// broken image.
+	// logo/favicon name a file under the source directory (copyStatics serves
+	// it at the same root-relative path); a typo fails the build instead of
+	// shipping a broken image.
 	for _, key := range []struct {
 		conf string
 		dst  *string

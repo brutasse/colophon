@@ -137,7 +137,7 @@ jobs:
         run: |
           set -eu
           export PATH="$COLOPHON_INSTALL_DIR:$PATH"
-          (cd testdata/site && colophon build --check --src source --out ../../_build/site-install)
+          colophon build --check --config testdata/site/colophon.conf --out _build/site-install
           test -d _build/site-install/pagefind
           grep -q pagefind-modal _build/site-install/index.html
       # The README tells readers to pipe this URL into a shell, so the URL is

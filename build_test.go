@@ -13,7 +13,7 @@ import (
 func buildFixture(t *testing.T, fixture, tags string) (string, *Site) {
 	t.Helper()
 	dir := filepath.Join("testdata", fixture)
-	s, err := NewSite(filepath.Join(dir, "source"), tags, dir)
+	s, err := NewSite(filepath.Join(dir, "colophon.conf"), tags)
 	if err != nil {
 		t.Fatalf("NewSite(%s): %v", fixture, err)
 	}
@@ -240,10 +240,10 @@ func TestNewSiteConfigErrors(t *testing.T) {
 	}
 	for _, c := range cases {
 		conf := filepath.Join(dir, "colophon.conf")
-		if err := os.WriteFile(conf, []byte(c.conf), 0o644); err != nil {
+		if err := os.WriteFile(conf, []byte("source: source\n"+c.conf), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		_, err := NewSite(src, c.tags, dir)
+		_, err := NewSite(conf, c.tags)
 		switch {
 		case c.wantMsg == "" && err != nil:
 			t.Errorf("%s: unexpected error: %v", c.name, err)
@@ -252,6 +252,53 @@ func TestNewSiteConfigErrors(t *testing.T) {
 		case c.wantMsg != "" && !strings.Contains(err.Error(), c.wantMsg):
 			t.Errorf("%s: error %q does not mention %q", c.name, err, c.wantMsg)
 		}
+	}
+}
+
+// TestNewSiteRequiresConf pins the gate: colophon.conf is the entry point, and
+// it is the file that says where the pages are, so neither a missing file nor a
+// file that names no source directory builds anything.
+func TestNewSiteRequiresConf(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "source")
+	if err := os.MkdirAll(src, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(src, "index.md"), []byte("# Home\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	conf := filepath.Join(dir, "colophon.conf")
+
+	if _, err := NewSite(conf, ""); err == nil || !strings.Contains(err.Error(), "source:") {
+		t.Errorf("a missing config built a site or did not name the key: %v", err)
+	}
+
+	cases := []struct{ name, conf, wantMsg string }{
+		{"no source key", "title: No source\n", "no source key"},
+		{"source that is not there", "source: pages\n", "is not a directory"},
+		{"source that is a file", "source: colophon.conf\n", "is not a directory"},
+	}
+	for _, c := range cases {
+		if err := os.WriteFile(conf, []byte(c.conf), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		_, err := NewSite(conf, "")
+		if err == nil || !strings.Contains(err.Error(), c.wantMsg) {
+			t.Errorf("%s: error %v does not mention %q", c.name, err, c.wantMsg)
+		}
+	}
+
+	// The source directory is resolved against the config file, so a run from
+	// elsewhere still builds the site that file describes.
+	if err := os.WriteFile(conf, []byte("source: source\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s, err := NewSite(conf, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Src != src {
+		t.Errorf("source resolved to %s, want %s", s.Src, src)
 	}
 }
 
@@ -303,7 +350,10 @@ func TestOrphanRule(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	s, err := NewSite(src, "", dir)
+	if err := os.WriteFile(filepath.Join(dir, "colophon.conf"), []byte("source: source\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s, err := NewSite(filepath.Join(dir, "colophon.conf"), "")
 	if err != nil {
 		t.Fatal(err)
 	}

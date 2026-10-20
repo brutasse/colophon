@@ -96,11 +96,11 @@ its version is its image tag and you move to a newer one by rebuilding.
 
 ## Quick start
 
-colophon reads the site config from `colophon.conf` in the working directory,
-and the pages from `--src`:
+A build runs from `colophon.conf`, which holds the site settings and names the
+directory holding the pages:
 
 ```
-colophon.conf
+colophon.conf       # source: source
 source/
   index.md          # the root page: its nav: list defines the navigation
   guide/
@@ -108,39 +108,44 @@ source/
     install.md
 ```
 
-Then run:
+Then run, in the directory holding that file:
 
 ```
 colophon build                       # render into _build/html
 colophon build --check               # the same build, plus the CI gate
 colophon serve                       # http://127.0.0.1:8000 with live reload
-colophon build --src docs --out site --tags internal
 ```
+
+Without a `colophon.conf` to read, `build` and `serve` stop and say so: nothing
+is guessed about where your pages are. `colophon version` and
+`colophon update` read no config, so they run anywhere. From another directory,
+name the file: `colophon build --config docs/colophon.conf --out site`.
 
 ## Site config
 
 `colophon.conf` holds one `key: value` pair per line. Lines that start with
-`#` are comments. A missing key means the default, and colophon ignores
+`#` are comments. Every key but `source` has a default, and colophon ignores
 a key it does not know, which keeps a config shared with another tool usable.
 
 | Key | Default | Meaning |
 | --- | --- | --- |
+| `source` | none | Directory holding the Markdown corpus; required, resolved against this file |
 | `title` | `Docs` | Site name in the `<title>` tag and the sidebar brand |
 | `home-label` | `Docs` | Text of the first breadcrumb |
 | `edit-base` | none | Base URL of the "Edit this page" link; no key means no link |
 | `base-url` | none | Public URL of this site; links to it are reported as non-portable |
 | `copyright` | none | Footer line; `{year}` becomes the build year |
-| `logo` | none | File under `--src`, served at the same root-relative path |
-| `favicon` | none | File under `--src`, served at the same root-relative path |
+| `logo` | none | File under the source directory, served at the same root-relative path |
+| `favicon` | none | File under the source directory, served at the same root-relative path |
 | `accent` | theme blue | Hex colour override for the light theme |
 | `accent-dark` | theme blue | Hex colour override for the dark theme |
 | `tags` | `projects=projects` | Comma-separated `name=dir` pairs of gated subtrees |
 | `iframe-hosts` | none | Comma-separated domains whose `<iframe>` embeds keep their `src` |
 
 An invalid value fails the build instead of shipping a broken page or a looser
-sanitizer. Colophon rejects a `logo` or `favicon` file that is not under
-`--src`, an `accent` that is not a hex colour, and an `iframe-hosts` entry that
-is not a domain.
+sanitizer. Colophon rejects a `source` directory that is not there, a `logo` or
+`favicon` file that is not under it, an `accent` that is not a hex colour, and
+an `iframe-hosts` entry that is not a domain.
 
 ### Gated subtrees
 
@@ -283,8 +288,8 @@ policy that blocks releases-hosting sites:
 
 ```
 FROM ghcr.io/brutasse/colophon:v0.1.0
-COPY docs/ /site/
-RUN colophon build --check --src source --out _site
+COPY docs/ /site/          # colophon.conf plus the source directory it names
+RUN colophon build --check --out _site
 ```
 
 Or run it against a checkout:
@@ -307,7 +312,7 @@ line to run unprivileged, which still reads the cached indexer.
 
 ## Dev server
 
-`colophon serve` watches `--src` and keeps the site in memory:
+`colophon serve` watches the source directory and keeps the site in memory:
 
 - a page rebuild takes milliseconds, and the browser reloads over Server-Sent
   Events,
