@@ -175,6 +175,51 @@ func TestGatedTagBuild(t *testing.T) {
 	}
 }
 
+// TestNoDefaultTags pins the default: the tags key is the only source of gated
+// subtrees, so a projects/ directory is ordinary content until colophon.conf
+// declares it, and its pages are ours to check rather than upstream's.
+func TestNoDefaultTags(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "source")
+	pages := map[string]string{
+		"index.md":            "---\nnav: list\n---\n\n# Home\n\n- [Project](projects/index.md)\n",
+		"projects/index.md":   "---\nnav: list\n---\n\n# Project\n\n- [Details](details.md)\n",
+		"projects/details.md": "# Details\n",
+	}
+	for rel, body := range pages {
+		p := filepath.Join(src, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	conf := filepath.Join(dir, "colophon.conf")
+	if err := os.WriteFile(conf, []byte("source: source\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s, err := NewSite(conf, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.BuildAll(); err != nil {
+		t.Fatal(err)
+	}
+	if len(s.Pages) != len(pages) {
+		t.Errorf("built %d pages, want %d (%v)", len(s.Pages), len(pages), rels(s))
+	}
+	if got := s.gatedDirs(); got != "no gated subtrees" {
+		t.Errorf("gatedDirs() = %q, want %q", got, "no gated subtrees")
+	}
+	// Nothing is exempt from the link gate either, so a clean subtree still
+	// reports nothing and a broken link there would be an error.
+	errs, info, _ := s.collectLinkProblems()
+	if len(errs) != 0 || len(info) != 0 {
+		t.Errorf("clean site reported problems: errs=%v info=%v", errs, info)
+	}
+}
+
 // TestBrokenSiteProblems checks that the gate's rules fire on the link shapes
 // it exists to catch.
 func TestBrokenSiteProblems(t *testing.T) {
@@ -236,7 +281,8 @@ func TestNewSiteConfigErrors(t *testing.T) {
 		{"missing logo", "logo: _static/nope.png\n", "", "not found under"},
 		{"bad accent", "accent: reddish\n", "", "not a hex color"},
 		{"bad tags value", "tags: nodir\n", "", "expected name=dir pairs"},
-		{"unknown tag", "tags: projects=projects\n", "nope", "unknown tag"},
+		{"unknown tag", "tags: internal=internal\n", "nope", "unknown tag"},
+		{"tag with none declared", "", "projects", "declares no tags"},
 	}
 	for _, c := range cases {
 		conf := filepath.Join(dir, "colophon.conf")

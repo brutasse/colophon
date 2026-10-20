@@ -45,7 +45,7 @@ type Page struct {
 type Site struct {
 	Src        string
 	Tags       map[string]bool   // tag names enabled via -tags
-	TagDirs    map[string]string // declared tag name → gated source dir
+	TagDirs    map[string]string // declared tag name → gated source dir; empty unless the tags key declares one
 	SiteTitle  string
 	HomeLabel  string // opening breadcrumb text
 	EditBase   string
@@ -122,7 +122,6 @@ func NewSite(confPath, tagsCSV string) (*Site, error) {
 	s := &Site{
 		Src:       src,
 		Tags:      map[string]bool{},
-		TagDirs:   map[string]string{"projects": "projects"},
 		SiteTitle: "Docs",
 		HomeLabel: "Docs",
 		md:        petroglyph.New(),
@@ -195,6 +194,9 @@ func NewSite(confPath, tagsCSV string) (*Site, error) {
 	for _, t := range strings.Split(tagsCSV, ",") {
 		if t = strings.TrimSpace(t); t == "" {
 			continue
+		}
+		if len(s.TagDirs) == 0 {
+			return nil, fmt.Errorf("unknown tag %q: site declares no tags (declare them as tags: name=dir pairs in colophon.conf)", t)
 		}
 		if _, ok := s.TagDirs[t]; !ok {
 			return nil, fmt.Errorf("unknown tag %q (declared in colophon.conf)", t)

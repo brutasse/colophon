@@ -139,7 +139,7 @@ a key it does not know, which keeps a config shared with another tool usable.
 | `favicon` | none | File under the source directory, served at the same root-relative path |
 | `accent` | theme blue | Hex colour override for the light theme |
 | `accent-dark` | theme blue | Hex colour override for the dark theme |
-| `tags` | `projects=projects` | Comma-separated `name=dir` pairs of gated subtrees |
+| `tags` | none | Comma-separated `name=dir` pairs of gated subtrees |
 | `iframe-hosts` | none | Comma-separated domains whose `<iframe>` embeds keep their `src` |
 
 An invalid value fails the build instead of shipping a broken page or a looser
@@ -152,7 +152,8 @@ an `iframe-hosts` entry that is not a domain.
 A gated subtree holds content that another repository owns, so its link
 problems never fail your build. Colophon excludes it from the build unless you
 pass its tag: `--tags internal` builds the directory that `tags` maps to
-`internal`.
+`internal`. The `tags` key is what declares a subtree, so a site with no `tags`
+key gates nothing.
 
 ## Pages
 

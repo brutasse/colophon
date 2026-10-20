@@ -141,8 +141,8 @@ func (s *Site) siteLinkSuggestion(p *Page, byOut map[string]*Page, u *url.URL) s
 }
 
 // styleProblems applies linkStyle to every href in a page's pre-render
-// markdown. Fenced blocks are skipped. projects/ pages are upstream-owned and
-// exempt.
+// markdown. Fenced blocks are skipped. Tag-gated subtrees are upstream-owned
+// and exempt.
 func (s *Site) styleProblems(p *Page, byOut map[string]*Page) (errs []string) {
 	if s.upstreamOwned(p.Rel) {
 		return nil
