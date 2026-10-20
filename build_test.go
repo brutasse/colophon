@@ -127,6 +127,27 @@ func TestBuildClean(t *testing.T) {
 		`<pre class="mermaid">`,
 		`/_assets/vendor/mermaid.min.js`,
 		`href="first.html#target-section"`,
+		// the diagram viewer: scroll box, zoom, pan, expand
+		`mm-view`,
+		`'reset zoom'`,
+		// reset puts back the inline style mermaid authored, max-width cap included
+		`svg.getAttribute('style')`,
+	)
+	// The zoom read-out and the fit/natural pair of buttons are gone: the chip
+	// carries zoom in, zoom out, reset, and expand only.
+	wantNot(t, "guide/second.html", second, "mm-zoom")
+	wantNot(t, "guide/second.html", second, "natural size")
+	// A page without a diagram carries no viewer of its own.
+	wantNot(t, "index.html", index, "mm-view")
+	// The theme styles what the viewer adds; the shrink-to-fit rule that made a
+	// large diagram unreadable must not come back.
+	want(t, "_assets/docs.css", readPage(t, out, "_assets/docs.css"),
+		".mm-view",
+		"overflow: auto; max-height: min(75vh, 42rem)",
+		// a diagram takes the width of the pane, not just the text column
+		"@container (min-width: 50rem) { .mm-view { width: 100cqi; } }",
+		// the control chip floats inside the diagram's frame
+		".mm-bar { position: absolute; top: .45rem; right: .6rem",
 	)
 
 	embeds := readPage(t, out, "embeds.html")

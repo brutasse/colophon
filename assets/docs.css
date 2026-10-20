@@ -130,8 +130,41 @@ nav.page-toc ul { margin: .2rem 0; padding-left: 1.2rem; }
 
 img { max-width: 100%; height: auto; }
 hr { border: none; border-top: 1px solid var(--line); margin: 2rem 0; }
-pre.mermaid { background: #fff; text-align: center; border: 1px solid var(--line); border-radius: 6px; padding: .5rem; }
-pre.mermaid svg { max-width: 100%; height: auto; }
+/* Diagrams keep their natural size inside a scroll box and the reader zooms,
+   rather than being shrunk into the column, which turns a large diagram into 6px
+   text. The SVG still fits by default; the viewer script in page.tmpl adds the
+   controls, and a page without JavaScript just shows the fitted diagram.
+
+   A diagram is wider than the prose on purpose: main is the inline-size container,
+   so 100cqi is the width the pane has, and a diagram fitted to that reaches its
+   natural size instead of being squeezed into the 52rem text column. The reading
+   rail floats right of the article once the pane is wide enough to show it, so the
+   diagram gives that much room back. */
+.mm-view { position: relative; margin: 1rem 0; }
+/* main becomes an inline-size container once the two-pane layout starts, and an
+   @container rule never matches without one, so a narrow screen keeps the diagram
+   inside the column instead of falling back to viewport units. The test is on
+   main's own width, which is the viewport minus the sidebar. */
+@container (min-width: 50rem) { .mm-view { width: 100cqi; } }
+/* past 70rem the reading rail appears and floats right of the article: it is 13rem
+   wide, and the gap measured short by 7px at 13.5rem, so give it 14.5rem */
+@container (min-width: 70rem) { .mm-view { width: calc(100cqi - 14.5rem); } }
+/* the chip floats over the diagram's own frame, so it stays put while the diagram
+   scrolls under it, and it is dark-on-white because the panel is always white */
+.mm-bar { position: absolute; top: .45rem; right: .6rem; z-index: 2;
+  display: flex; gap: .2rem; padding: .15rem .2rem;
+  background: rgba(255, 255, 255, .86); border: 1px solid var(--line); border-radius: 6px; }
+.mm-btn { font: inherit; font-size: .85rem; line-height: 1.3; width: 1.5rem; cursor: pointer;
+  border: none; border-radius: 4px; background: none; color: #333; }
+.mm-btn:hover { background: #e8e8e8; color: #000; }
+pre.mermaid { background: #fff; text-align: center; border: 1px solid var(--line); border-radius: 6px; padding: .5rem;
+  overflow: auto; max-height: min(75vh, 42rem); overscroll-behavior: contain; cursor: grab; }
+.mm-grab pre.mermaid { cursor: grabbing; }
+pre.mermaid svg { max-width: 100%; height: auto; display: block; margin: auto; }
+.mm-full { position: fixed; inset: 1rem; z-index: 60; background: #fff; padding: .6rem;
+  border-radius: 8px; box-shadow: 0 12px 48px rgba(0, 0, 0, .45); }
+.mm-full pre.mermaid { height: calc(100vh - 6rem); max-height: none; }
+body.mm-fullscreen { overflow: hidden; }
 
 @media (max-width: 60rem) {
   /* below the fit threshold the nav is an off-canvas drawer behind a hamburger */

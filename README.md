@@ -223,10 +223,13 @@ title:
 ```
 
 Everything else is plain GitHub Flavored Markdown. Colophon highlights a fenced
-code block that names a language, and turns a `mermaid` fence into a diagram.
-`$...$` math needs the `math: true` front matter, which ships MathJax with the
-page. To keep an old link target alive when you move a heading, write the
-anchor as raw HTML:
+code block that names a language, and turns a `mermaid` fence into a diagram. A
+diagram renders fitted to the page width inside a scroll box, with a chip over it
+to zoom in, zoom out, reset, and expand, and drags to pan; a wide diagram stays
+readable that way instead of shrinking to unreadable text, and a page without
+JavaScript still shows it. `$...$` math needs the `math: true` front matter,
+which ships MathJax with the page. To keep an old link target alive when you move
+a heading, write the anchor as raw HTML:
 
 ```markdown
 <div id="upgrade-notes"></div>
