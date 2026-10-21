@@ -12,7 +12,17 @@ import (
 // preResult accumulates the artifacts found while preprocessing a body.
 type preResult struct {
 	includes    map[string]bool
-	navChildren []string // rel pages from nav: list bullet lists (depth 0 only)
+	navChildren []string        // rel pages from nav: list bullet lists (depth 0 only)
+	navAll      map[string]bool // of those, the children whose link ended in `#all`
+}
+
+// navItem is one item of a nav list: the child page it names, whether its link
+// carried the `#all` marker, and the line to emit, which is the source line with the
+// marker removed.
+type navItem struct {
+	rel  string // child page source path
+	all  bool   // `#all`: every h1 of the child is a document, title heading included
+	line string // the source line, marker stripped
 }
 
 var (
@@ -21,9 +31,11 @@ var (
 	// one include option: `literal`, `language=yaml`, `language="yaml"`
 	includeArgRe = regexp.MustCompile(`^([a-z][a-z-]*)(?:=("(?:[^"]*)"|[^\s"]+))?`)
 	// in `nav: list` pages, a top-level list whose every item is exactly one
-	// relative .md link is that page's nav; anything else stays prose
-	navBulletRe  = regexp.MustCompile(`^[-*][ \t]+\[[^\]]+\]\(([^)\s#]+\.md)\)[ \t]*$`)
-	navNumberRe  = regexp.MustCompile(`^[0-9]+\.[ \t]+\[[^\]]+\]\(([^)\s#]+\.md)\)[ \t]*$`)
+	// relative .md link is that page's nav; anything else stays prose. An item may
+	// end in `#all` to say every h1 of the target is a document, and preprocess drops
+	// the marker from the rendered link.
+	navBulletRe  = regexp.MustCompile(`^[-*][ \t]+\[[^\]]+\]\(([^)\s#]+\.md)(#all)?\)[ \t]*$`)
+	navNumberRe  = regexp.MustCompile(`^[0-9]+\.[ \t]+\[[^\]]+\]\(([^)\s#]+\.md)(#all)?\)[ \t]*$`)
 	navItemishRe = regexp.MustCompile(`^\s*(?:[-*]|\d+\.)[ \t]`)
 )
 
@@ -95,10 +107,10 @@ func cutField(s string) (string, string) {
 
 // navRun detects an all-md-link top-level list starting at line i (only in
 // `nav: list` pages, only at the top level). Returns the index just past the
-// run, the child rels, and whether it counts as nav. A list that is not
+// run, the child items, and whether it counts as nav. A list that is not
 // closed by a blank line is prose (its items still report the run end so the
 // caller does not re-test the inner items as a fresh list).
-func navRun(lines []string, i int, dir string, depth int, optIn bool, until int) (int, []string, bool) {
+func navRun(lines []string, i int, dir string, depth int, optIn bool, until int) (int, []navItem, bool) {
 	if !optIn || depth != 0 || i <= until {
 		return 0, nil, false
 	}
@@ -115,17 +127,22 @@ func navRun(lines []string, i int, dir string, depth int, optIn bool, until int)
 	if !re.MatchString(lines[i]) {
 		return 0, nil, false
 	}
-	j, rels := i, []string{}
+	j, items := i, []navItem{}
 	for j < len(lines) {
 		m := re.FindStringSubmatch(strings.TrimRight(lines[j], "\r"))
 		if m == nil {
 			break
 		}
-		rels = append(rels, navRel(dir, m[1]))
+		line, marked := lines[j], m[2] != ""
+		if marked {
+			// `#all` is for colophon, so the page links the target alone
+			line = strings.Replace(line, "#all)", ")", 1)
+		}
+		items = append(items, navItem{rel: navRel(dir, m[1]), all: marked, line: line})
 		j++
 	}
 	if j >= len(lines) || strings.TrimSpace(lines[j]) == "" {
-		return j, rels, true
+		return j, items, true
 	}
 	return j, nil, false
 }
@@ -149,17 +166,23 @@ func (s *Site) preprocess(body, dir string, depth int, res *preResult, navOptIn 
 			out = append(out, s.includeFragment(dir, m[1], depth, res))
 			continue
 		}
-		k, rels, ok := navRun(lines, i, dir, depth, navOptIn, navScanUntil)
+		k, items, ok := navRun(lines, i, dir, depth, navOptIn, navScanUntil)
 		if k > 0 {
 			navScanUntil = k - 1 // never re-test this list's inner items
 			if ok {
 				// A gated subtree stays out of the nav until its tag is passed.
-				for _, rel := range rels {
-					if !s.excluded(rel) {
-						res.navChildren = append(res.navChildren, rel)
+				for _, it := range items {
+					if !s.excluded(it.rel) {
+						res.navChildren = append(res.navChildren, it.rel)
+						if it.all {
+							if res.navAll == nil {
+								res.navAll = map[string]bool{}
+							}
+							res.navAll[it.rel] = true
+						}
 					}
+					out = append(out, it.line)
 				}
-				out = append(out, lines[i:k]...)
 				i = k - 1
 				continue
 			}

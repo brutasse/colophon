@@ -125,6 +125,9 @@ blockquote.markdown-alert-caution { --alert-fg: var(--alert-caution); }
 nav.page-toc { background: var(--code-bg); border: 1px solid var(--line); border-radius: 6px; padding: .6rem 1rem; margin: 1rem 0; font-size: .9rem; }
 nav.page-toc ul { margin: .2rem 0; padding-left: 1.2rem; }
 
+/* the top-level sections of a child page, listed under its own bullet in a nav list */
+main ul.nav-sections { margin: .15rem 0 .5rem; font-size: .92rem; }
+
 .prevnext { display: flex; justify-content: space-between; gap: 1rem; margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--line); max-width: 52rem; }
 .pagefoot { margin-top: 1.2rem; font-size: .8rem; color: var(--muted); display: flex; justify-content: space-between; gap: 1rem; max-width: 52rem; }
 

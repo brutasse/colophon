@@ -10,6 +10,8 @@ navigation — the pages are linked in list order.
 
 - [First page](first.md)
 - [Second page](second.md)
+- [Composite guide pages](composite.md#all)
+- [Glued appendix](glued.md)
 
 ## Before the middle
 

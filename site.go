@@ -40,6 +40,10 @@ type Page struct {
 	TOCDepth    int             // front-matter toc: N (-1 absent, 0 = all levels)
 	Includes    map[string]bool // fragment sources inlined into this page
 	NavChildren []string        // child pages from all-md-link lists in `nav: list` pages
+	// NavAll marks the children whose link ended in `#all`, which says every h1 of
+	// that page is a document: the sub-list under the item then includes the heading
+	// the page's title came from, not only the ones after it.
+	NavAll map[string]bool
 }
 
 type Site struct {
@@ -430,6 +434,7 @@ func (s *Site) renderPage(rel, raw string) *Page {
 		Meta:        meta,
 		Includes:    res.includes,
 		NavChildren: res.navChildren,
+		NavAll:      res.navAll,
 		TOCDepth:    -1,
 		IDs:         map[string]bool{},
 		Flags:       petroglyph.Needs(doc, source),
@@ -464,10 +469,66 @@ func (s *Site) renderPage(rel, raw string) *Page {
 	return p
 }
 
-// finalize inserts the page TOC below the title when `toc:` asks for one.
+// titleHeading is the id of the heading the page takes its title from, or "" when
+// the title comes from front matter or from the file name. That heading is not one
+// of the page's own sections, and the page header already shows it.
+func (p *Page) titleHeading() string {
+	if p.Meta["title"] != "" || len(p.Headings) == 0 || p.Headings[0].Level != 1 {
+		return ""
+	}
+	return p.Headings[0].ID
+}
+
+// sectionChildren lists the page's top-level sections, which are its children in
+// the nav tree: every h1 but the one the title comes from. Heading level is the
+// whole rule — a file that glues several documents into one page gives each of
+// them a sidebar row and a rail entry, while an h2 subsection stays in the rail
+// alone. An h1 repeating the page title is that title written twice, not a
+// section. Heading ids are text-derived, so the rows point at anchors the page
+// already had.
+func (p *Page) sectionChildren() []heading {
+	var out []heading
+	for _, hd := range p.Headings {
+		if hd.Level == 1 && hd.Text != p.Title {
+			out = append(out, hd)
+		}
+	}
+	return out
+}
+
+// everySection lists the page's top-level sections including the heading its title
+// came from, which is what `#all` says about the file: every h1 in it is a document,
+// not the name of the file. A heading that only repeats a title the page states for
+// itself is that title written twice, so it stays out.
+func (p *Page) everySection() []heading {
+	var out []heading
+	for _, hd := range p.Headings {
+		if hd.Level == 1 && (p.Meta["title"] == "" || hd.Text != p.Title) {
+			out = append(out, hd)
+		}
+	}
+	return out
+}
+
+// navDeclared reports whether a change to a known page can move the nav tree, in
+// which case only a full rebuild is right: the page declares children in a list,
+// or holds sections that are children of it.
+func (s *Site) navDeclared(rel string) bool {
+	p, ok := s.Pages[rel]
+	if !ok {
+		return false
+	}
+	return p.Meta["nav"] == "list" || len(p.sectionChildren()) > 0
+}
+
+// finalize puts the page body in its final form: the sub-sections a nav list
+// gains from its children, then the page TOC when `toc:` asks for one.
 // wrapPage then puts the body in the site template.
 func (s *Site) finalize(p *Page) {
 	body := string(p.Raw)
+	if len(p.NavChildren) > 0 {
+		body = s.navSectionLists(p, body)
+	}
 	if p.TOCDepth >= 0 {
 		body = strings.Replace(body, "</h1>", "</h1>\n"+s.pageTOC(p, p.TOCDepth), 1)
 	}
@@ -505,6 +566,7 @@ func (s *Site) pageTOC(p *Page, depth int) string {
 	for ; open >= minLevel; open-- {
 		b.WriteString("</li></ul>")
 	}
-	b.WriteString("</ul></nav>")
+	// the loop above closed the outer <ul> the nav opened
+	b.WriteString("</nav>")
 	return b.String()
 }

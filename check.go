@@ -21,6 +21,9 @@ var (
 	rawAttrRe = regexp.MustCompile(`(?:href|src)="([^"]+)"`)
 	urlBareRe = regexp.MustCompile(`(https?://[^\s)<>"']+)`)
 	fenceRe   = regexp.MustCompile(`^\s*(` + "`" + `{3,}|~{3,})`)
+	// a list item that is exactly one link to a section of a page, which reads to
+	// its author like a nav entry and to colophon like prose
+	navAnchorItemRe = regexp.MustCompile(`(?m)^[ \t]*[-*][ \t]+\[[^\]]*\]\([^)\s]+\.md#([^)\s]+)\)[ \t]*$`)
 )
 
 // linkStyle reports one source href that renders fine but is not
@@ -166,6 +169,20 @@ func (s *Site) styleProblems(p *Page, byOut map[string]*Page) (errs []string) {
 	scan(refDefRe, true)
 	scan(rawAttrRe, true)
 	scan(urlBareRe, false)
+	// A `nav: list` page gives children to a top-level list only while every item of
+	// it is one plain [text](page.md) link, so an item linking to a section of a page
+	// costs that whole list its children, and the pages beside it lose their place in
+	// the navigation with nothing to report. `#all` is the exception an author reaches
+	// for on purpose: it names that page's sections as the list under its item.
+	if p.Meta["nav"] == "list" {
+		for _, m := range navAnchorItemRe.FindAllSubmatchIndex(p.Src, -1) {
+			if inSpan(spans, m[0]) || string(p.Src[m[2]:m[3]]) == "all" {
+				continue // `#all` is the marker a section listing asks for
+			}
+			errs = append(errs, fmt.Sprintf("%s: nav list item %s links to a section, not a page: children come only from items that are one plain [text](page.md) link, or one ending in #all to list the page's sections under it",
+				p.Rel, strings.TrimSpace(string(p.Src[m[0]:m[1]]))))
+		}
+	}
 	return errs
 }
 

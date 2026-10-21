@@ -6,6 +6,7 @@ import (
 	"html/template"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -13,6 +14,8 @@ import (
 
 type node struct {
 	Rel      string
+	Label    string // sidebar text when the node is a heading, not a page
+	Href     string // target when the node carries a fragment
 	Children []*node
 }
 
@@ -48,6 +51,15 @@ func (s *Site) buildNav() {
 			if c := build(k, childChain); c != nil {
 				n.Children = append(n.Children, c)
 			}
+		}
+		// A page also parents its own top-level sections. They carry no Page, so
+		// they stay out of prev/next and out of the chain.
+		for _, hd := range p.sectionChildren() {
+			n.Children = append(n.Children, &node{
+				Rel:   rel + "#" + hd.ID,
+				Label: hd.Text,
+				Href:  "/" + outPath(rel) + "#" + hd.ID,
+			})
 		}
 		return n
 	}
@@ -92,15 +104,17 @@ func (s *Site) renderSidebar(p *Page) string {
 	}
 	var renderNode func(n *node, active string)
 	renderNode = func(n *node, active string) {
-		title := n.Rel
-		if pp, ok := s.Pages[n.Rel]; ok {
+		title, href := n.Rel, "/"+outPath(n.Rel)
+		if n.Label != "" {
+			title, href = n.Label, n.Href
+		} else if pp, ok := s.Pages[n.Rel]; ok {
 			title = pp.Title
 		}
 		cls := ""
 		if n.Rel == active {
 			cls = ` class="active"`
 		}
-		fmt.Fprintf(&b, `<li><a href="/%s"%s>%s</a>`, html.EscapeString(outPath(n.Rel)), cls, html.EscapeString(title))
+		fmt.Fprintf(&b, `<li><a href="%s"%s>%s</a>`, html.EscapeString(href), cls, html.EscapeString(title))
 		if (chain[n.Rel] || n.Rel == active) && len(n.Children) > 0 {
 			b.WriteString("<ul>")
 			for _, c := range n.Children {
@@ -116,6 +130,56 @@ func (s *Site) renderSidebar(p *Page) string {
 	}
 	b.WriteString(`</ul>`)
 	return b.String()
+}
+
+// navSectionItemRe matches a rendered list item that is nothing but a link to a
+// built page, which is what an item of a `nav: list` renders to.
+var navSectionItemRe = regexp.MustCompile(`<li><a[^>]*href="([^"]+\.html)"[^>]*>[^<]*</a></li>`)
+
+// navSectionLists lists a child page's top-level sections as a sub-list under the
+// list item that links to it, so an index whose child glues several documents into
+// one file lists each of those documents instead of one line for the whole file.
+// Which sections is the question `#all` answers: normally the heading the child's
+// title came from is the file's own name and stays the parent item, and with `#all`
+// the index says that heading is a document like the rest, so it joins the list.
+// Only items the nav took as children are touched: an author who wrote a sub-list
+// under a link broke the all-links rule, so that list is prose and stays as written.
+// The new items reuse the item's own href with a heading anchor, which keeps them
+// file-relative like the links the builder rewrote.
+func (s *Site) navSectionLists(p *Page, body string) string {
+	sections := map[string][]heading{}
+	for _, rel := range p.NavChildren {
+		c := s.Pages[rel]
+		if c == nil {
+			continue
+		}
+		secs := c.sectionChildren()
+		if p.NavAll[rel] {
+			secs = c.everySection()
+		}
+		if len(secs) > 0 {
+			sections[rel] = secs
+		}
+	}
+	if len(sections) == 0 {
+		return body
+	}
+	dir := path.Dir(p.Rel)
+	return navSectionItemRe.ReplaceAllStringFunc(body, func(item string) string {
+		href := navSectionItemRe.FindStringSubmatch(item)[1]
+		secs, ok := sections[srcRel(dir, strings.TrimSuffix(href, ".html")+".md")]
+		if !ok {
+			return item
+		}
+		var b strings.Builder
+		b.WriteString(strings.TrimSuffix(item, "</li>"))
+		b.WriteString(`<ul class="nav-sections">`)
+		for _, hd := range secs {
+			fmt.Fprintf(&b, `<li><a href="%s#%s">%s</a></li>`, html.EscapeString(href), hd.ID, html.EscapeString(hd.Text))
+		}
+		b.WriteString("</ul></li>")
+		return b.String()
+	})
 }
 
 func (s *Site) renderCrumbs(p *Page) string {
@@ -148,15 +212,30 @@ func (s *Site) renderPrevNext(p *Page) string {
 }
 
 // pageT wraps a built page in the site template.
-// tocRe captures h2/h3 headings with level, id and label (the label stops at
-// the heading-anchor link the renderer appends).
-var tocRe = regexp.MustCompile(`(?s)<h([23]) id="([^"]+)">(.*?)<a class="heading-anchor"`)
+// tocRe captures h1/h2/h3 headings with level, id and label (the label stops at
+// the heading-anchor link the renderer appends); tocH23 is the outline of a page
+// with no sections of its own, which takes h1s alone to be its title.
+var tocRe = regexp.MustCompile(`(?s)<h([123]) id="([^"]+)">(.*?)<a class="heading-anchor"`)
+var tocH23 = regexp.MustCompile(`(?s)<h([23]) id="([^"]+)">(.*?)<a class="heading-anchor"`)
 
 // renderTOC builds the right-hand "On this page" rail from the page's
-// h2/h3 headings; fewer than two headings means no rail. Labels are the
+// headings; fewer than two headings means no rail. Labels are the
 // already-sanitized rendered HTML.
 func (s *Site) renderTOC(p *Page) string {
-	ms := tocRe.FindAllSubmatch(p.Body, -1)
+	ms := tocH23.FindAllSubmatch(p.Body, -1)
+	if len(p.sectionChildren()) > 0 {
+		// The page's own sections belong in the outline, and the heading the title
+		// comes from does not, because the page header already shows it.
+		title := p.titleHeading()
+		all := tocRe.FindAllSubmatch(p.Body, -1)
+		kept := all[:0]
+		for _, m := range all {
+			if string(m[2]) != title {
+				kept = append(kept, m)
+			}
+		}
+		ms = kept
+	}
 	if len(ms) < 2 {
 		return ""
 	}

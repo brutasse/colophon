@@ -61,14 +61,30 @@ func wantNot(t *testing.T, page, html string, needles ...string) {
 
 // TestBuildClean is the smoke test: every documented construct in
 // testdata/site renders, and the link gate stays silent about it.
+// sliceBetween returns the first span of a built page that starts at one marker
+// and stops at the next closing marker, which is how a test looks at the rail or
+// the sidebar without matching markup the other one also writes.
+func sliceBetween(t *testing.T, page, html, start, end string) string {
+	t.Helper()
+	i := strings.Index(html, start)
+	if i < 0 {
+		t.Fatalf("%s: no %q", page, start)
+	}
+	rest := html[i:]
+	if j := strings.Index(rest, end); j >= 0 {
+		return rest[:j]
+	}
+	return rest
+}
+
 func TestBuildClean(t *testing.T) {
 	out, s := buildFixture(t, "site", "")
 
 	// Fragment files are declared by front matter, inlined into the pages that
 	// include them, and the tag-gated subtree is excluded until its tag is
-	// passed: 5 pages, not 7.
-	if len(s.Pages) != 5 {
-		t.Errorf("built %d pages, want 5 (%v)", len(s.Pages), rels(s))
+	// passed: 7 pages, not 9.
+	if len(s.Pages) != 7 {
+		t.Errorf("built %d pages, want 7 (%v)", len(s.Pages), rels(s))
 	}
 	if exists(out, "guide/basics.html") {
 		t.Error("fragment page was built standalone")
@@ -121,6 +137,36 @@ func TestBuildClean(t *testing.T) {
 		"colophon:include", // every include comment was consumed, fenced fragment included
 	)
 
+	// A page parents its own top-level sections, so each glued document gets a
+	// sidebar row and a rail entry pointing at the anchor the page already had.
+	composite := readPage(t, out, "guide/composite.html")
+	want(t, "guide/composite.html", composite,
+		`<a href="/guide/composite.html#second-glued-document">Second glued document</a>`, // sidebar
+		`<a href="#third-glued-document">Third glued document</a>`,                        // rail
+	)
+	// On the index, the sections are a sub-list of the item that holds them. What
+	// `#all` decides is which headings are in that list: composite.md is a set of
+	// documents, so the heading its title came from is one of them and joins the list,
+	// while glued.md keeps that heading as the name of the item alone.
+	want(t, "guide/index.html", guide,
+		`<a href="composite.html" rel="nofollow">Composite guide pages</a><ul class="nav-sections">`+
+			`<li><a href="composite.html#glued-guide-pages">Glued guide pages</a></li>`+
+			`<li><a href="composite.html#second-glued-document">Second glued document</a></li>`, // #all
+		`<a href="glued.html" rel="nofollow">Glued appendix</a><ul class="nav-sections">`+
+			`<li><a href="glued.html#first-appendix-document">First appendix document</a></li>`, // without it
+	)
+	if n := strings.Count(guide, `class="nav-sections"`); n != 2 {
+		t.Errorf("guide/index.html nests %d child lists, want 2", n)
+	}
+	wantNot(t, "guide/index.html", guide, `composite.md#all`) // the marker is for the builder, not the link
+	wantNot(t, "guide/index.html sidebar", sliceBetween(t, "guide/index.html", guide, `<nav class="sidebar"`, "</nav>"),
+		`#second-glued-document`)
+	// A page's own title heading is not one of its sections, and an h2 stays in the
+	// rail alone. The inline `toc:` list is a separate construct, and it does name
+	// the title, so look at the rail only.
+	rail := sliceBetween(t, "guide/index.html", guide, `<nav class="toc"`, "</nav>")
+	wantNot(t, "guide/index.html rail", rail, `href="#guide"`)
+
 	second := readPage(t, out, "guide/second.html")
 	want(t, "guide/second.html", second,
 		`/_assets/vendor/tex-svg.js`, // math: true ships MathJax
@@ -171,8 +217,8 @@ func TestBuildClean(t *testing.T) {
 // as informational by the link gate because upstream owns it.
 func TestGatedTagBuild(t *testing.T) {
 	out, s := buildFixture(t, "site", "gated")
-	if len(s.Pages) != 7 {
-		t.Errorf("built %d pages with the gated tag, want 7 (%v)", len(s.Pages), rels(s))
+	if len(s.Pages) != 9 {
+		t.Errorf("built %d pages with the gated tag, want 9 (%v)", len(s.Pages), rels(s))
 	}
 	if !exists(out, "gated/details.html") {
 		t.Fatal("gated subtree was not built with its tag")
@@ -445,6 +491,69 @@ func TestOrphanRule(t *testing.T) {
 	for _, silent := range []string{"child.md", "kept.md", "deliberate.md", "inlined.md"} {
 		if strings.Contains(joined, silent) {
 			t.Errorf("%s was reported as unreachable:\n%s", silent, joined)
+		}
+	}
+}
+
+// TestNavAnchorRule covers the nav list item that fails silently: a link to a
+// section of a page reads like a nav entry to its author, but a `nav: list` page
+// takes children only from items that are one plain page link, so the item leaves
+// the whole list as prose and the pages beside it lose their breadcrumbs, their
+// sidebar row, and their place in prev/next with nothing said about it.
+func TestNavAnchorRule(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "source")
+	pages := map[string]string{
+		"index.md": "---\nnav: list\n---\n\n# Home\n\n- [Home page](home.md)\n- [A section of it](home.md#second-thing)\n- [All of it](home.md#all)\n\n" +
+			"An anchor in prose is an ordinary link, and stays one: [second thing](home.md#second-thing). " +
+			"The notes are [elsewhere](notes.md).\n\n" +
+			"```\n- [Inside a fence](home.md#second-thing)\n```\n",
+		"home.md":  "# Home page\n\nProse.\n\n## Second thing\n\nMore prose.\n",
+		"notes.md": "# Notes\n\nNot a nav page, so this item is just a link:\n\n- [Second thing](home.md#second-thing)\n",
+	}
+	for rel, body := range pages {
+		p := filepath.Join(src, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(dir, "colophon.conf"), []byte("source: source\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s, err := NewSite(filepath.Join(dir, "colophon.conf"), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.BuildAll(); err != nil {
+		t.Fatal(err)
+	}
+	errs, info, _ := s.collectLinkProblems()
+	joined := strings.Join(errs, "\n")
+	if len(errs) != 2 || len(info) != 0 {
+		t.Fatalf("got errs=%v info=%v", errs, info)
+	}
+	if !strings.Contains(joined, "index.md: nav list item - [A section of it](home.md#second-thing) links to a section, not a page") {
+		t.Errorf("the nav list item was not reported:\n%s", joined)
+	}
+	// `#all` is the marker, so the nav item rule stays quiet about it. It reached
+	// the page as a link here only because this list is prose, and the missing
+	// anchor says so, which is what keeps a misplaced marker from rotting silently.
+	if !strings.Contains(joined, "index.md: missing anchor home.html#all") {
+		t.Errorf("the misplaced #all marker was not reported as the link it is:\n%s", joined)
+	}
+	if strings.Contains(joined, "nav list item - [All of it]") {
+		t.Errorf("the #all marker was reported as a nav list item:\n%s", joined)
+	}
+	// The report is worth having precisely because the list really was lost.
+	if s.inNav("home.md") {
+		t.Error("home.md is in the nav tree, so the anchor item did not break the list")
+	}
+	for _, silent := range []string{"notes.md", "notes.md#", "Inside a fence", "An anchor in prose"} {
+		if strings.Contains(joined, silent) {
+			t.Errorf("%q was reported, but only a nav list item is a problem:\n%s", silent, joined)
 		}
 	}
 }

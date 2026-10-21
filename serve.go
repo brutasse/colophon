@@ -279,7 +279,7 @@ func (s *Site) Serve(addr string) error {
 						break
 					}
 					if strings.HasSuffix(rel, "index.md") || s.includeReferrer(rel) != nil ||
-						(known && s.Pages[rel].Meta["nav"] == "list") || (!known && !s.excluded(rel)) {
+						s.navDeclared(rel) || (!known && !s.excluded(rel)) {
 						full = true
 						break
 					}

@@ -171,11 +171,33 @@ Pages carry optional front matter between `---` lines:
 Colophon ignores every other key, which keeps front matter copied from another
 generator harmless.
 
-Navigation comes from those lists alone. The pages in a page's top-level bullet
-list are its children, and `index.md` is the root of the tree. A page with no
-list has no children. Colophon reports a page that is outside the tree and that
-no other page links to: it builds, but no reader reaches it. `build --check`
-fails on it, and `orphan: true` says a page stays unlinked on purpose.
+Navigation comes from those lists and from headings. The pages in a page's
+top-level bullet list are its children, and `index.md` is the root of the tree. A
+page with no list has no page children. Colophon reports a page that is outside
+the tree and that no other page links to: it builds, but no reader reaches it.
+`build --check` fails on it, and `orphan: true` says a page stays unlinked on
+purpose.
+
+A page also parents its own top-level sections: every `#` heading below its title
+is a child of it in the tree. That is what a file holding several documents glued
+into one page needs, because one page title would otherwise be the only row for
+the whole file; each glued document gets a sidebar row and a rail entry, while
+`##` and deeper stay in the "On this page" rail alone. Heading levels decide it, so
+nothing declares it, and the rows point at anchors the page already had.
+
+On the page that lists such a child, the list gains those sections as a sub-list
+under its bullet, so an index of glued files reads as the documents inside it
+instead of one line each. Nothing to write for that either, and a list whose items
+the author already annotated with sub-bullets stays exactly as written, because a
+list like that is prose and not the child navigation.
+
+An item may end its link in `#all` — `[Numbers allocation](numbers_allocation.md#all)`
+— to say that every h1 of that file is a document, including the heading the page
+would take its title from, which is what a set of documents glued into one file is.
+Give the item the name of the file, and the page its own name with `title:`, so the
+bullet, the sidebar row and the tab all say what the file is and every document in
+it is listed under it. Colophon drops the marker from the rendered link, and the
+page itself keeps one row in the navigation.
 
 ### Links
 
@@ -249,7 +271,12 @@ exits 0: a broken link should not stop you from reading the site.
 - a page that no `nav: list` contains and that no other page links to,
 - a file that an include comment inlines but that does not declare
   `fragment: true`,
-- a page with math that does not declare `math: true`.
+- a page with math that does not declare `math: true`,
+- a `nav: list` item that links to a section of a page (`[text](page.md#anchor)`).
+  Children come only from items that are one plain page link, so that one item
+  quietly leaves the entire list, and every page in it, out of the navigation. The
+  one accepted fragment is `#all`, which asks for every section of the page, the
+  title heading included, under the item.
 
 For a missing anchor, the report can also print the rewrite it suggests, where
 the fragment differs only by dash collapsing (`old --- anchor` to the slug the
