@@ -346,8 +346,8 @@ line to run unprivileged, which still reads the cached indexer.
 
 `colophon serve` watches the source directory and keeps the site in memory:
 
-- a page rebuild takes milliseconds, and the browser reloads over Server-Sent
-  Events,
+- a page rebuild takes milliseconds, and the browser reloads over a WebSocket
+  that only pings the tabs whose page changed,
 - a fragment change or a navigation change rebuilds the whole site,
 - the checker reports the problems of each saved file on the terminal,
 - Pagefind indexes a mirror of the pages in the background, so a reload never

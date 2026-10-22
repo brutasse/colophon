@@ -568,6 +568,49 @@ func TestNavAnchorRule(t *testing.T) {
 	}
 }
 
+// TestDevReloadUsesWebSocket pins the shape of the dev reload channel. An SSE
+// stream is one of the browser's six HTTP/1.1 connections to an origin, held for
+// the whole life of the page, so one per open page meant six doc tabs left a
+// seventh navigation queued with no socket to open, and a navigation in an
+// existing tab deadlocked behind its own stream. A WebSocket holds no such slot.
+func TestDevReloadUsesWebSocket(t *testing.T) {
+	out, s := buildFixture(t, "site", "")
+	// The shipped site has no reload endpoint at all, and no client for one.
+	wantNot(t, "index.html", readPage(t, out, "index.html"),
+		"EventSource", "/sse", "WebSocket", "/reload")
+
+	s.Dev = true
+	b, err := s.wrapPage(s.Pages["index.md"])
+	if err != nil {
+		t.Fatalf("wrapPage: %v", err)
+	}
+	dev := string(b)
+	want(t, "dev index.html", dev, "new WebSocket(", "/reload?path=")
+	wantNot(t, "dev index.html", dev, "EventSource", "/sse")
+
+	// A tab announces the document it shows by URL, and a rebuild reports the
+	// pages it changed by output path. Both must land on the same key, or the
+	// ping reaches no tab, or reaches every one.
+	for rel, p := range s.Pages {
+		if k := renderedKey("/" + p.OutPath); k != p.OutPath {
+			t.Errorf("%s: renderedKey(%q) = %q, want the page's own output path", rel, "/"+p.OutPath, k)
+		}
+	}
+}
+
+func TestRenderedKey(t *testing.T) {
+	for _, tc := range []struct{ urlPath, key string }{
+		{"/", "index.html"},
+		{"/index.html", "index.html"},
+		{"/guide/first.html", "guide/first.html"},
+		{"/guide/../first.html", "first.html"},
+	} {
+		if got := renderedKey(tc.urlPath); got != tc.key {
+			t.Errorf("renderedKey(%q) = %q, want %q", tc.urlPath, got, tc.key)
+		}
+	}
+}
+
 func rels(s *Site) []string {
 	out := make([]string, 0, len(s.Pages))
 	for rel := range s.Pages {

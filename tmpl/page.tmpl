@@ -14,7 +14,19 @@
 {{if .Math}}<script>window.MathJax = {tex: {inlineMath: [["\\(", "\\)"]], displayMath: [["\\[", "\\]"]]}, options: {skipHtmlTags: ["script","noscript","style","textarea","pre","code"]}};</script>
 <script defer src="/_assets/vendor/tex-svg.js"></script>{{end}}
 {{if .Mermaid}}<script defer src="/_assets/vendor/mermaid.min.js" onload="mermaid.initialize({startOnLoad: true, securityLevel: 'strict'})"></script>{{end}}
-{{if .Dev}}<script>new EventSource("/sse").onmessage = function () { location.reload(); };</script>{{end}}
+{{if .Dev}}<script>(function(){
+/* Hot reload over a WebSocket rather than an EventSource: a stream holds one of
+   the browser's six HTTP/1.1 connections per origin for the whole life of the
+   page, so six open doc pages starve the seventh navigation. A WebSocket holds
+   no such slot, and the server pings only the tabs showing a changed page. */
+function watch(){
+  var ws = new WebSocket((location.protocol == "https:" ? "wss://" : "ws://") +
+    location.host + "/reload?path=" + encodeURIComponent(location.pathname));
+  ws.onmessage = function () { location.reload(); };
+  ws.onclose = function () { setTimeout(watch, 1000); }; // server may be restarting
+}
+watch();
+})();</script>{{end}}
 </head>
 <body class="docs">
 <div class="layout">
