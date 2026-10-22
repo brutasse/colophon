@@ -178,6 +178,8 @@ func TestBuildClean(t *testing.T) {
 		`'reset zoom'`,
 		// reset puts back the inline style mermaid authored, max-width cap included
 		`svg.getAttribute('style')`,
+		// expand is one diagram at a time, through one function Escape also takes
+		`view.setOpen=setOpen`,
 	)
 	// The zoom read-out and the fit/natural pair of buttons are gone: the chip
 	// carries zoom in, zoom out, reset, and expand only.
@@ -187,14 +189,22 @@ func TestBuildClean(t *testing.T) {
 	wantNot(t, "index.html", index, "mm-view")
 	// The theme styles what the viewer adds; the shrink-to-fit rule that made a
 	// large diagram unreadable must not come back.
-	want(t, "_assets/docs.css", readPage(t, out, "_assets/docs.css"),
+	css := readPage(t, out, "_assets/docs.css")
+	want(t, "_assets/docs.css", css,
 		".mm-view",
 		"overflow: auto; max-height: min(75vh, 42rem)",
 		// a diagram takes the width of the pane, not just the text column
 		"@container (min-width: 50rem) { .mm-view { width: 100cqi; } }",
 		// the control chip floats inside the diagram's frame
 		".mm-bar { position: absolute; top: .45rem; right: .6rem",
+		// expand covers the screen: the pane's width and the margin that doubles the
+		// inset both have to come off, or the panel stays inside the pane
+		".mm-view.mm-full { position: fixed; inset: 1rem; width: auto; margin: 0",
+		".mm-full pre.mermaid { height: 100%; max-height: none",
 	)
+	// The scroll box is the panel, so it takes the panel's height and not a second
+	// guess at the viewport height, which left a band of panel under the diagram.
+	wantNot(t, "_assets/docs.css", css, "calc(100vh - 6rem)")
 
 	embeds := readPage(t, out, "embeds.html")
 	want(t, "embeds.html", embeds, `src="https://embed.example.com/doc/1"`)

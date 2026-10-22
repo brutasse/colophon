@@ -164,9 +164,17 @@ pre.mermaid { background: #fff; text-align: center; border: 1px solid var(--line
   overflow: auto; max-height: min(75vh, 42rem); overscroll-behavior: contain; cursor: grab; }
 .mm-grab pre.mermaid { cursor: grabbing; }
 pre.mermaid svg { max-width: 100%; height: auto; display: block; margin: auto; }
-.mm-full { position: fixed; inset: 1rem; z-index: 60; background: #fff; padding: .6rem;
-  border-radius: 8px; box-shadow: 0 12px 48px rgba(0, 0, 0, .45); }
-.mm-full pre.mermaid { height: calc(100vh - 6rem); max-height: none; }
+/* expand gives the diagram the screen: the panel is inset from the viewport and the
+   drawing keeps the size it had. width and margin are written out instead of left to
+   the cascade, because the cascade gets both wrong here. The @container rules above
+   would keep the panel the width of the pane, and on an absolutely positioned box
+   with both insets set, the over-constrained value that gets dropped is `right`.
+   The margin would add a second 1rem to the inset. */
+.mm-view.mm-full { position: fixed; inset: 1rem; width: auto; margin: 0; z-index: 60;
+  background: #fff; padding: .6rem; border-radius: 8px; box-shadow: 0 12px 48px rgba(0, 0, 0, .45); }
+/* the scroll box fills the panel, so a wide diagram has the whole screen to be wide
+   on; a viewport height here instead would leave a band of panel under the box */
+.mm-full pre.mermaid { height: 100%; max-height: none; }
 body.mm-fullscreen { overflow: hidden; }
 
 @media (max-width: 60rem) {

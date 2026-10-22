@@ -37,9 +37,10 @@
 {{if .Mermaid}}<script>(function(){
 /* Diagram viewer. A rendered diagram keeps its natural size inside a scroll box,
    and the control chip over it gives the reader zoom in, zoom out, reset, and
-   expand. A diagram starts fitted, so nothing moves until a control is used and a
-   page without JavaScript still shows it. mermaid's startOnLoad offers no
-   callback, so wait for the SVGs to appear. */
+   expand; expand lifts the box onto the screen at the zoom it already had. A
+   diagram starts fitted, so nothing moves until a control is used and a page
+   without JavaScript still shows it. mermaid's startOnLoad offers no callback, so
+   wait for the SVGs to appear. */
 var MIN=0.25,MAX=8;
 function natural(svg){
   var vb=svg.viewBox&&svg.viewBox.baseVal;
@@ -77,19 +78,29 @@ function decorate(pre){
   var n=natural(svg);if(!n.w)return;
   var view=document.createElement('div');
   view.className='mm-view';view.nat=n;
-  view.authored=null;
+  view.authored=null;view.open=false;
   pre.parentNode.insertBefore(view,pre);
   var bar=document.createElement('div');bar.className='mm-bar';
   bar.appendChild(btn('\u2212','zoom out',function(){size(view,shown(view)/1.25);}));
   bar.appendChild(btn('+','zoom in',function(){size(view,shown(view)*1.25);}));
   bar.appendChild(btn('\u27f2','reset zoom',function(){reset(view);}));
-  var expand=btn('\u26f6','expand',function(){
-    var open=view.classList.toggle('mm-full');
-    document.body.classList.toggle('mm-fullscreen',!!document.querySelector('.mm-view.mm-full'));
-    expand.textContent=open?'\u2715':'\u26f6';
-    expand.setAttribute('aria-label',open?'collapse':'expand');
-    expand.title=open?'collapse':'expand';});
+  var expand=btn('\u26f6','expand',function(){setOpen(!view.open);});
   bar.appendChild(expand);
+  // Only one diagram can be on the screen at a time: two panels inset 1rem from the
+  // viewport are exactly coincident and both opaque, so the reader could never reach
+  // the one underneath. setOpen is hung on the view so another view can close this
+  // one, which is also where the label and the body class stay consistent.
+  view.setOpen=setOpen;
+  function setOpen(open){
+    open=!!open;if(view.open===open)return;
+    if(open)[].slice.call(document.querySelectorAll('.mm-view.mm-full')).forEach(function(other){
+      if(other!==view&&other.setOpen)other.setOpen(false);});
+    view.open=open;
+    view.classList.toggle('mm-full',open);
+    document.body.classList.toggle('mm-fullscreen',!!document.querySelector('.mm-view.mm-full'));
+    var label=open?'collapse':'expand';
+    expand.textContent=open?'\u2715':'\u26f6';
+    expand.setAttribute('aria-label',label);expand.title=label;}
   view.appendChild(bar);view.appendChild(pre);
   // a scroll box a keyboard cannot reach is a trap
   pre.tabIndex=0;pre.setAttribute('role','region');
@@ -111,10 +122,7 @@ function decorate(pre){
     e.preventDefault();
     size(view,shown(view)*(e.deltaY<0?1.1:1/1.1));},{passive:false});
   document.addEventListener('keydown',function(e){
-    if(e.key==='Escape'&&view.classList.contains('mm-full')){
-      view.classList.remove('mm-full');expand.textContent='\u26f6';
-      expand.setAttribute('aria-label','expand');expand.title='expand';
-      document.body.classList.remove('mm-fullscreen');}});
+    if(e.key==='Escape'&&view.open)setOpen(false);});
 }
 function scan(){
   var pending=0;

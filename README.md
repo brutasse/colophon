@@ -249,9 +249,10 @@ code block that names a language, and turns a `mermaid` fence into a diagram. A
 diagram renders fitted to the page width inside a scroll box, with a chip over it
 to zoom in, zoom out, reset, and expand, and drags to pan; a wide diagram stays
 readable that way instead of shrinking to unreadable text, and a page without
-JavaScript still shows it. `$...$` math needs the `math: true` front matter,
-which ships MathJax with the page. To keep an old link target alive when you move
-a heading, write the anchor as raw HTML:
+JavaScript still shows it. Expand moves the box onto the full screen at its
+current size, and Escape or the same control puts it back. `$...$` math needs
+the `math: true` front matter, which ships MathJax with the page. To keep an old
+link target alive when you move a heading, write the anchor as raw HTML:
 
 ```markdown
 <div id="upgrade-notes"></div>
