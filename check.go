@@ -218,9 +218,11 @@ func inSpan(spans [][2]int, pos int) bool {
 }
 
 // pageProblems checks every internal link on a wrapped page. It returns
-// hard errors plus "rewrite hints": for missing anchors whose fragment only
-// differs by dash-collapse (a `a---b` fragment against petroglyph's `a-b`
-// slug), the suggested new fragment.
+// hard errors plus "rewrite hints": for a missing anchor whose fragment
+// matches a real one once hyphen runs are collapsed on both sides, the
+// fragment to write instead. petroglyph builds ids the way GitHub does, so a
+// fragment carried over from the old collapsing slug differs from the target
+// only by those runs.
 func (s *Site) pageProblems(p *Page, byOut map[string]*Page) (errs, hints []string) {
 	errs = append(errs, s.styleProblems(p, byOut)...)
 	page, err := s.wrapPage(p)
@@ -252,10 +254,31 @@ func (s *Site) pageProblems(p *Page, byOut map[string]*Page) (errs, hints []stri
 		}
 		if cand := dashRunRe.ReplaceAllString(frag, "-"); target.IDs[cand] {
 			hints = append(hints, fmt.Sprintf("%s: %s -> %s", p.Rel, href, cand))
+		} else if cand := dashCollapseHint(target, frag); cand != "" {
+			hints = append(hints, fmt.Sprintf("%s: %s -> %s", p.Rel, href, cand))
 		}
 		errs = append(errs, fmt.Sprintf("%s: missing anchor %s", p.Rel, href))
 	}
 	return errs, hints
+}
+
+// dashCollapseHint names the fragment on target that a collapsed fragment was
+// meant to reach: "#foo-bar-baz" against the id "foo-bar--baz". It stays quiet
+// when more than one id would match, because then there is no single fragment
+// to suggest.
+func dashCollapseHint(target *Page, frag string) string {
+	want := dashRunRe.ReplaceAllString(frag, "-")
+	found := ""
+	for id := range target.IDs {
+		if id == frag || dashRunRe.ReplaceAllString(id, "-") != want {
+			continue
+		}
+		if found != "" && found != id {
+			return ""
+		}
+		found = id
+	}
+	return found
 }
 
 // inNav reports whether rel is in the nav tree built from the root index's
@@ -381,28 +404,14 @@ func (s *Site) Lint() {
 }
 
 // RunCheck is the CI gate invoked by build --check: broken or non-portable
-// links, missing anchors, pages no reader can reach, and math nodes without
-// `math: true` front matter. Only repo-native pages gate; problems in
-// tag-gated subtrees are printed as informational. Exit 1 on any gating
-// problem.
+// links, missing anchors, and pages no reader can reach. Only repo-native
+// pages gate; problems in tag-gated subtrees are printed as informational.
+// Exit 1 on any gating problem.
 func (s *Site) RunCheck() {
-	mathPages := []string{} // native: gates
-	infoMath := []string{}  // gated subtrees: informational
-	for _, p := range s.Pages {
-		if p.Flags.Math && p.Meta["math"] != "true" {
-			if s.upstreamOwned(p.Rel) {
-				infoMath = append(infoMath, p.Rel)
-			} else {
-				mathPages = append(mathPages, p.Rel)
-			}
-		}
-	}
-	sort.Strings(mathPages)
-	sort.Strings(infoMath)
 	errs, info, hints := s.collectLinkProblems()
 
-	fmt.Printf("check: %d pages, %d errors, %d informational (%s), %d pages with math nodes\n",
-		len(s.Pages), len(errs), len(info), s.gatedDirs(), len(mathPages)+len(infoMath))
+	fmt.Printf("check: %d pages, %d errors, %d informational (%s)\n",
+		len(s.Pages), len(errs), len(info), s.gatedDirs())
 	for _, e := range errs {
 		fmt.Println(" ", e)
 	}
@@ -410,15 +419,6 @@ func (s *Site) RunCheck() {
 		fmt.Printf("  informational (%s, fix upstream):\n", s.gatedDirs())
 		for _, e := range info {
 			fmt.Println(" ", e)
-		}
-	}
-	if len(mathPages)+len(infoMath) > 0 {
-		fmt.Println("  math nodes present (fix in source or declare `math: true`):")
-		for _, m := range mathPages {
-			fmt.Println("   ", m)
-		}
-		for _, m := range infoMath {
-			fmt.Println("   ", m)
 		}
 	}
 	if len(hints) > 0 {
@@ -432,7 +432,7 @@ func (s *Site) RunCheck() {
 			}
 		}
 	}
-	if len(errs) > 0 || len(mathPages) > 0 {
+	if len(errs) > 0 {
 		os.Exit(1)
 	}
 }

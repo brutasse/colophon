@@ -3,7 +3,7 @@ module github.com/brutasse/colophon
 go 1.27.3
 
 require (
-	github.com/brutasse/petroglyph v0.1.1
+	github.com/brutasse/petroglyph v0.2.0
 	github.com/coder/websocket v1.8.15
 	github.com/fsnotify/fsnotify v1.9.0
 	github.com/microcosm-cc/bluemonday v1.0.27

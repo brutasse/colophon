@@ -9,6 +9,6 @@ Deliberately broken links, which `build --check` must report:
 * [Root-absolute page link](/one.md)
 * [Absolute link to this site](https://docs.example.test/one.html)
 
-The math on [the other page](two.md) has no `math: true` front matter.
+The math on [the other page](two.md) ships MathJax with no declaration.
 
 <iframe src="https://embed.example.com/doc/1" title="No host configured"></iframe>

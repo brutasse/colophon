@@ -163,7 +163,6 @@ Pages carry optional front matter between `---` lines:
 | --- | --- |
 | `title` | Page title; the first heading is the default |
 | `toc` | `true` or a depth: insert a table of contents after the first `<h1>` |
-| `math` | `true`: this page uses math, so ship MathJax |
 | `nav` | `list`: the top-level bullet list of this page is its child navigation |
 | `fragment` | `true`: the file is inlined by include comments and never built as a page; implies `orphan` |
 | `orphan` | `true`: nothing links to this page on purpose, so the check gate accepts it |
@@ -203,8 +202,9 @@ page itself keeps one row in the navigation.
 
 Write a link to another page as a file-relative `.md` path, with an optional
 `#fragment`: `[install](install.md#linux)`. The builder rewrites it to `.html`
-at render time. The same file on GitHub then navigates to the source page. Link
-to an asset with a file-relative path too, never a root-absolute one.
+at render time. The same file on GitHub then navigates to the source page, and
+the fragment names the heading there too: heading anchors follow GitHub's rule.
+Link to an asset with a file-relative path too, never a root-absolute one.
 
 ### Fragments
 
@@ -250,12 +250,14 @@ diagram renders fitted to the page width inside a scroll box, with a chip over i
 to zoom in, zoom out, reset, and expand, and drags to pan; a wide diagram stays
 readable that way instead of shrinking to unreadable text, and a page without
 JavaScript still shows it. Expand moves the box onto the full screen at its
-current size, and Escape or the same control puts it back. `$...$` math needs
-the `math: true` front matter, which ships MathJax with the page. To keep an old
-link target alive when you move a heading, write the anchor as raw HTML:
+current size, and Escape or the same control puts it back. `$...$` and `$$...$$`
+math need no declaration: colophon reads the same two forms GitHub does and
+ships MathJax with the pages that hold them. To keep an old link target alive
+when you move a heading, write the anchor as raw HTML, the way GitHub
+documents it:
 
 ```markdown
-<div id="upgrade-notes"></div>
+<a name="upgrade-notes"></a>
 ```
 
 ## The check gate
@@ -272,7 +274,6 @@ exits 0: a broken link should not stop you from reading the site.
 - a page that no `nav: list` contains and that no other page links to,
 - a file that an include comment inlines but that does not declare
   `fragment: true`,
-- a page with math that does not declare `math: true`,
 - a `nav: list` item that links to a section of a page (`[text](page.md#anchor)`).
   Children come only from items that are one plain page link, so that one item
   quietly leaves the entire list, and every page in it, out of the navigation. The

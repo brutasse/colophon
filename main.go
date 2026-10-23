@@ -46,8 +46,8 @@ func main() {
 			"anchors, non-portable link forms (.html, root-absolute, extensionless\n" +
 			"page links), pages no reader can reach because nothing links to them and no\n" +
 			"`nav: list` contains them, a fragment whose `fragment: true` declaration is\n" +
-			"missing, pages with math nodes that lack `math: true` front matter, and " +
-			"`nav: list` items that link to a section of a page instead of the page.\n\n" +
+			"missing, and `nav: list` items that link to a section of a page instead of\n" +
+			"the page.\n\n" +
 			"Problems in a tag-gated subtree are always informational: those trees\n" +
 			"are copied verbatim from upstream repositories and must be fixed there.",
 		Args: cobra.NoArgs,

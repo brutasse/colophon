@@ -289,8 +289,8 @@ func TestBrokenSiteProblems(t *testing.T) {
 		t.Errorf("got %d problems, want 7:\n%s", len(errs), joined)
 	}
 
-	// Math without `math: true` is what the gate fails a build on; RunCheck
-	// turns the flag into exit 1, so assert the flag itself here.
+	// Math is detected, never declared: two.md carries the flag that ships
+	// MathJax with it, and no front matter asked for it.
 	if p, ok := s.Pages["two.md"]; !ok || !p.Flags.Math {
 		t.Error("two.md was not detected as a math page")
 	}
@@ -463,6 +463,50 @@ func TestOrphanRule(t *testing.T) {
 		if strings.Contains(joined, silent) {
 			t.Errorf("%s was reported as unreachable:\n%s", silent, joined)
 		}
+	}
+}
+
+// A moved heading keeps its old fragment through <a name>, which is the anchor
+// idiom GitHub documents, and a fragment written before the anchors followed
+// GitHub's rule differs from its target only by hyphen runs. The gate accepts
+// the first and names the fix for the second.
+func TestAnchorTargetsAndDashRewrites(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "source")
+	pages := map[string]string{
+		"index.md": "---\nnav: list\n---\n\n# Home\n\n- [Notes](notes.md)\n\n" +
+			"[Old target](notes.md#upgrade-notes) and [punctuation](notes.md#foo-bar--baz).\n" +
+			"[Stale fragment](notes.md#foo-bar-baz).\n",
+		"notes.md": "# Notes\n\n## Foo: Bar — baz!!!\n\n<a name=\"upgrade-notes\"></a>\n",
+	}
+	for rel, body := range pages {
+		p := filepath.Join(src, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(dir, "colophon.conf"), []byte("source: source\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s, err := NewSite(filepath.Join(dir, "colophon.conf"), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.BuildAll(); err != nil {
+		t.Fatal(err)
+	}
+	errs, info, hints := s.collectLinkProblems()
+	if len(errs) != 1 || len(info) != 0 {
+		t.Fatalf("got errs=%v info=%v", errs, info)
+	}
+	if !strings.Contains(errs[0], "missing anchor notes.html#foo-bar-baz") {
+		t.Errorf("the stale fragment was not reported: %v", errs)
+	}
+	if len(hints) != 1 || hints[0] != "index.md: notes.html#foo-bar-baz -> foo-bar--baz" {
+		t.Errorf("the fragment rewrite was not suggested: %v", hints)
 	}
 }
 

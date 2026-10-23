@@ -32,7 +32,7 @@ type Page struct {
 	Title       string
 	Meta        map[string]string
 	Headings    []heading
-	IDs         map[string]bool // every id="..." in the rendered body
+	IDs         map[string]bool // every fragment target in the rendered body: ids and <a name> anchors
 	Flags       petroglyph.Flags
 	Src         []byte          // preprocessed markdown body (pre-render), for source-level checks
 	Raw         []byte          // sanitized body, before the page TOC is inserted
@@ -401,12 +401,15 @@ func rawFrontMatter(src string) (map[string]string, string) {
 }
 
 var (
-	headingRe  = regexp.MustCompile(`(?s)<h([1-6])[^>]*\bid="([^"]+)"[^>]*>(.*?)</h[1-6]>`)
-	idRe       = regexp.MustCompile(`id="([^"]+)"`)
-	anchorRe   = regexp.MustCompile(`(?s)<a class="heading-anchor"[^>]*>.*?</a>`)
-	hexColorRe = regexp.MustCompile(`^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$`)
-	hostnameRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$`)
-	tagStripRe = regexp.MustCompile(`<[^>]+>`)
+	headingRe = regexp.MustCompile(`(?s)<h([1-6])[^>]*\bid="([^"]+)"[^>]*>(.*?)</h[1-6]>`)
+	idRe      = regexp.MustCompile(`id="([^"]+)"`)
+	// <a name="x"> is the custom-anchor idiom GitHub documents, and a fragment
+	// names it as well as an id, so the check gate counts it as a target.
+	anchorNameRe = regexp.MustCompile(`<a\b[^>]*\bname="([^"]+)"`)
+	anchorRe     = regexp.MustCompile(`(?s)<a class="heading-anchor"[^>]*>.*?</a>`)
+	hexColorRe   = regexp.MustCompile(`^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$`)
+	hostnameRe   = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$`)
+	tagStripRe   = regexp.MustCompile(`<[^>]+>`)
 	// href on <a> tags only (code blocks may contain literal href="x.md" text)
 	mdLinkRe = regexp.MustCompile(`(<a [^>]*href=")([^":#][^"]*?)\.md((?:#[^"]*)?")`)
 )
@@ -456,6 +459,9 @@ func (s *Site) renderPage(rel, raw string) *Page {
 		p.Headings = append(p.Headings, heading{Level: lv, ID: m[2], Text: strings.TrimSpace(text)})
 	}
 	for _, m := range idRe.FindAllStringSubmatch(h, -1) {
+		p.IDs[m[1]] = true
+	}
+	for _, m := range anchorNameRe.FindAllStringSubmatch(h, -1) {
 		p.IDs[m[1]] = true
 	}
 	p.Title = meta["title"]
