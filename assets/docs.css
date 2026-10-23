@@ -102,8 +102,21 @@ article pre {
 article code { font: .85em ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace; }
 article :not(pre) > code { background: var(--code-bg); border: 1px solid var(--line); border-radius: 4px; padding: .1em .3em; }
 article pre code { background: none; border: none; padding: 0; }
-.codeblock { margin: 1rem 0; }
+/* The wrapper, not the pre, is the copy control's frame: a pre scrolls its own
+   content, so a button inside it would slide away with the code. */
+.codeblock { position: relative; margin: 1rem 0; }
 .codeblock pre { margin: 0; }
+.code-copy {
+  position: absolute; top: .4rem; right: .5rem;
+  display: flex; align-items: center; gap: .3rem;
+  padding: .1rem .4rem; font: inherit; font-size: .75rem; line-height: 1.4;
+  color: var(--muted); background: var(--bg); border: 1px solid var(--line);
+  border-radius: 5px; cursor: pointer; opacity: 0;
+}
+.code-copy svg { flex: none; }
+.codeblock:hover .code-copy, .code-copy:focus { opacity: 1; }
+/* a touch screen has no hover to reveal the control with */
+@media (hover: none) { .code-copy { opacity: 1; } }
 .table-wrap { overflow-x: auto; margin: 1rem 0; }
 article table { border-collapse: collapse; font-size: .9rem; }
 article th, article td { border: 1px solid var(--line); padding: .35rem .7rem; text-align: left; vertical-align: top; }
