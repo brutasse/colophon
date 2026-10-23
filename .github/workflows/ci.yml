@@ -32,7 +32,8 @@ jobs:
           test -d _build/site/pagefind
           grep -q pagefind-modal _build/site/index.html
           grep -q 'src="https://embed.example.com/doc/1"' _build/site/embeds.html
-          test -f _build/site/_assets/docs.css
+          ls _build/site/_assets/docs.*.css > /dev/null
+          test ! -e _build/site/_assets/docs.css
           test -f _build/site/_static/logo.svg
           test ! -e _build/site/gated/index.html
       # The page scripts are tested in JavaScript, against jsdom and the fixture site

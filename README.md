@@ -135,8 +135,8 @@ a key it does not know, which keeps a config shared with another tool usable.
 | `edit-base` | none | Base URL of the "Edit this page" link; no key means no link |
 | `base-url` | none | Public URL of this site; links to it are reported as non-portable |
 | `copyright` | none | Footer line; `{year}` becomes the build year |
-| `logo` | none | File under the source directory, served at the same root-relative path |
-| `favicon` | none | File under the source directory, served at the same root-relative path |
+| `logo` | none | File under the source directory, published under `/_assets/` at a name derived from its bytes |
+| `favicon` | none | File under the source directory, published under `/_assets/` at a name derived from its bytes |
 | `accent` | theme blue | Hex colour override for the light theme |
 | `accent-dark` | theme blue | Hex colour override for the dark theme |
 | `tags` | none | Comma-separated `name=dir` pairs of gated subtrees |
@@ -346,6 +346,28 @@ indexer its own `colophon` would reject.
 The image runs as root, which suits a build stage; pass `--user` or a `USER`
 line to run unprivileged, which still reads the cached indexer.
 
+## Caching
+
+Colophon writes every file under `/_assets/` at a name built from its bytes, so
+`assets/docs.css` is served as `/_assets/docs.9f3c1a2b.css` and the site's logo
+as `/_assets/logo.4c0d27e1a3f8.svg`. Such a name is good for exactly one set of
+bytes, so serve that directory as
+`Cache-Control: public, max-age=31536000, immutable` and a reader who already
+has the file never downloads it again. A changed file gets a new name, and every
+page that loads it asks for the new name, so a deploy arrives without anyone
+force-refreshing. The config `logo` and `favicon` files are published there
+beside the binary's own assets, and also copied to the path you named, so a page
+can still link the file directly.
+
+A page keeps its name across a deploy while its bytes move, so leave the HTML to
+your host's usual policy. Pagefind names its own bundle under `/pagefind/`, and
+only its index files describe their contents, so cache that path no longer than
+a build.
+
+`colophon serve` follows the same rule in miniature: it serves the addressed
+assets as immutable and everything else, including the pages and the search
+bundle, as uncacheable. Nothing a rebuild can change survives a reload.
+
 ## Dev server
 
 `colophon serve` watches the source directory and keeps the site in memory:
@@ -413,9 +435,9 @@ binary it describes.
 
 `assets/docs.css`, `assets/chroma.css`, and the page scripts `assets/site.js`,
 `assets/toc.js`, and `assets/mermaid-viewer.js` are part of this project, with no
-build step of their own: the templates reference them as `/_assets/<name>` and `go
-embed` carries them in the binary. Each script is tested in JavaScript under
-`test/js`:
+build step of their own: `go embed` carries them in the binary, and the template
+loads each at a name built from its bytes (see [Caching](#caching)). Each script
+is tested in JavaScript under `test/js`:
 
 ```sh
 npm ci --prefix test/js && npm --prefix test/js test

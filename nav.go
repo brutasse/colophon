@@ -300,6 +300,9 @@ func (s *Site) WriteOut(out string) error {
 	if err := WriteAssets(out); err != nil {
 		return err
 	}
+	if err := s.writeStatics(out); err != nil {
+		return err
+	}
 	if err := s.writePages(out); err != nil {
 		return err
 	}

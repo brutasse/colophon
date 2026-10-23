@@ -55,8 +55,8 @@ type Site struct {
 	EditBase   string
 	BaseHost   string // host of base-url, for detecting self-referential links
 	Copyright  string // "{year}" already substituted; empty = no footer line
-	Logo       string // root-absolute URL; empty = brand is the site title text
-	Favicon    string // root-absolute URL; empty = no favicon link
+	Logo       string // content-addressed URL; empty = brand is the site title text
+	Favicon    string // content-addressed URL; empty = no favicon link
 	Accent     string // hex override of the light --accent; empty = docs.css default
 	AccentDark string // hex override of the dark --accent; empty = docs.css default
 	Search     bool   // pagefind bundle built; gates the search UI markup
@@ -74,6 +74,15 @@ type Site struct {
 
 	fragMu sync.Mutex
 	frags  map[string]bool // source rel → declared `fragment: true`
+
+	// statics holds the config-named files colophon publishes at a
+	// content-addressed URL (logo, favicon), indexed by that URL. The dev server
+	// swaps the whole index when one is saved, so an address always names the same
+	// bytes and a request for a superseded one is a miss, not a stale file.
+	staticMu   sync.Mutex
+	statics    *assetIndex
+	logoSrc    string // source-relative name of the file each URL above was digested from
+	faviconSrc string
 }
 
 // loadConf reads the flat "key: value" site config (same dialect as page
@@ -142,21 +151,25 @@ func NewSite(confPath, tagsCSV string) (*Site, error) {
 			*key.def = strings.ReplaceAll(v, "{year}", year)
 		}
 	}
-	// logo/favicon name a file under the source directory (copyStatics serves
-	// it at the same root-relative path); a typo fails the build instead of
-	// shipping a broken image.
+	// logo/favicon name a file under the source directory; a typo fails the build
+	// instead of shipping a broken image. hashedStatics publishes each under
+	// /_assets/ at a name derived from its bytes.
 	for _, key := range []struct {
 		conf string
 		dst  *string
 	}{
-		{"logo", &s.Logo}, {"favicon", &s.Favicon},
+		{"logo", &s.logoSrc}, {"favicon", &s.faviconSrc},
 	} {
 		if v := conf[key.conf]; v != "" {
-			if _, err := os.Stat(filepath.Join(src, filepath.FromSlash(v))); err != nil {
-				return nil, fmt.Errorf("config %s: %s not found under %s", key.conf, v, src)
+			rel := strings.TrimPrefix(v, "/")
+			if _, err := os.Stat(filepath.Join(src, filepath.FromSlash(rel))); err != nil {
+				return nil, fmt.Errorf("config %s: %s not found under %s", key.conf, rel, src)
 			}
-			*key.dst = "/" + strings.TrimPrefix(v, "/")
+			*key.dst = rel
 		}
+	}
+	if err := s.hashedStatics(); err != nil {
+		return nil, err
 	}
 	// accent/accent-dark override the theme's accent colours; hex-validated so
 	// config values can never inject CSS.

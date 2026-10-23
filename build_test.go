@@ -1,7 +1,10 @@
 package main
 
 import (
+	"fmt"
 	"math"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -99,8 +102,8 @@ func TestBuildClean(t *testing.T) {
 	index := readPage(t, out, "index.html")
 	want(t, "index.html", index,
 		"<title>Test docs home · Colophon test site</title>",
-		`<img src="/_static/logo.svg" alt="Colophon test site">`,
-		`<link rel="icon" href="/_static/logo.svg">`,
+		fmt.Sprintf(`<img src=%q alt="Colophon test site">`, s.Logo),
+		fmt.Sprintf(`<link rel="icon" href=%q>`, s.Favicon),
 		`--accent: #0b7285;`,
 		`<a href="/guide/index.html">Guide</a>`, // sidebar
 		`href="guide/first.html"`,               // .md link rewritten to .html
@@ -108,6 +111,14 @@ func TestBuildClean(t *testing.T) {
 		`<a href="https://example.com/edit/main/testdata/site/source/index.md">Edit this page</a>`,
 	)
 	wantNot(t, "index.html", index, "pagefind-modal", `href="guide/first.md"`)
+	// The header names the logo by its bytes, so a replaced file arrives without the
+	// reader's cache ever having held the name it replaces. The copy at the
+	// configured path stays for anything that links the file directly.
+	for _, u := range []string{s.Logo, s.Favicon} {
+		if !strings.HasPrefix(u, "/_assets/logo.") || !exists(out, strings.TrimPrefix(u, "/")) {
+			t.Errorf("config image published at %q, want a written /_assets/logo.<digest>.svg", u)
+		}
+	}
 	// The gated subtree is listed in the home nav but is not built without its
 	// tag, so it must stay out of the sidebar too.
 	wantNot(t, "index.html", index, `<a href="/gated/index.html"`)
@@ -179,11 +190,18 @@ func TestBuildClean(t *testing.T) {
 	want(t, "embeds.html", embeds, `src="https://embed.example.com/doc/1"`)
 	wantNot(t, "embeds.html", embeds, "not-allowed.example.net")
 
-	// Assets are extracted from the binary, statics copied verbatim.
-	for _, f := range []string{"_assets/docs.css", "_assets/chroma.css", "_assets/site.js", "_assets/toc.js", "_assets/mermaid-viewer.js", "_assets/vendor/mermaid.min.js", "_static/logo.svg"} {
+	// Assets are extracted from the binary at the address their bytes name, statics
+	// copied verbatim.
+	for _, f := range writtenAssets(t) {
 		if !exists(out, f) {
 			t.Errorf("%s was not written", f)
 		}
+	}
+	if exists(out, "_assets/docs.css") {
+		t.Error("_assets/docs.css was written under a name no page can cache forever")
+	}
+	if !exists(out, "_static/logo.svg") {
+		t.Error("_static/logo.svg was not copied")
 	}
 
 	errs, info, hints := s.collectLinkProblems()
@@ -679,35 +697,54 @@ func indexSrc(scripts []pageScript, src string) int {
 	return -1
 }
 
-const (
-	mermaidVendorURL = "/_assets/vendor/mermaid.min.js"
-	mermaidViewerURL = "/_assets/mermaid-viewer.js"
-	texURL           = "/_assets/vendor/tex-svg.js"
-	siteURL          = "/_assets/site.js"
-	tocURL           = "/_assets/toc.js"
-	searchURL        = "/pagefind/pagefind-component-ui.js"
-)
+// searchURL is the one script a page names that colophon does not address: pagefind
+// writes its own bundle, under its own names.
+const searchURL = "/pagefind/pagefind-component-ui.js"
+
+// assetURLt resolves one of the binary's assets to the URL a page's tag names it by,
+// through the lookup the template calls. Editing a stylesheet moves the address, so the
+// tests follow the assets rather than pinning a digest that moves with them.
+func assetURLt(t *testing.T, name string) string {
+	t.Helper()
+	u, err := assetURL(name)
+	if err != nil {
+		t.Fatalf("assetURL(%q): %v", name, err)
+	}
+	return u
+}
+
+// writtenAssets are the site paths the embedded assets are expected at in the output
+// tree.
+func writtenAssets(t *testing.T) []string {
+	t.Helper()
+	var out []string
+	for _, name := range []string{"docs.css", "chroma.css", "site.js", "toc.js",
+		"mermaid-viewer.js", "vendor/mermaid.min.js", "vendor/tex-svg.js"} {
+		out = append(out, strings.TrimPrefix(assetURLt(t, name), "/"))
+	}
+	return out
+}
 
 // wantScripts are the scripts a page earns its tags on, from the same values wrapPage
 // hands the template. Deriving them from the site rather than from the page's own bytes
 // is what makes a tag the template dropped a failure: a page can be missing the spy it
 // needs as quietly as it can carry one it has no rail for.
-func wantScripts(s *Site, p *Page, page string) []string {
+func wantScripts(t *testing.T, s *Site, p *Page, page string) []string {
 	var want []string
 	if s.Search {
 		want = append(want, searchURL)
 	}
 	if p.Flags.Math {
-		want = append(want, texURL)
+		want = append(want, assetURLt(t, "vendor/tex-svg.js"))
 	}
 	if p.Flags.Mermaid {
-		want = append(want, mermaidVendorURL, mermaidViewerURL)
+		want = append(want, assetURLt(t, "vendor/mermaid.min.js"), assetURLt(t, "mermaid-viewer.js"))
 	}
-	want = append(want, siteURL) // the theme control and the mobile nav, one file for the whole site
+	want = append(want, assetURLt(t, "site.js")) // the theme control and the mobile nav, one file for the whole site
 	// The rail is toc.js's whole subject — its first line gives up without one — so the
 	// tag follows the <nav> and no flag decides either of them.
 	if strings.Contains(page, `<nav class="toc"`) {
-		want = append(want, tocURL)
+		want = append(want, assetURLt(t, "toc.js"))
 	}
 	return want
 }
@@ -727,7 +764,7 @@ func TestBuiltPageScriptTags(t *testing.T) {
 	check := func(t *testing.T, rel string, p *Page, page string) {
 		t.Helper()
 		got := pageScripts(page)
-		want := wantScripts(s, p, page)
+		want := wantScripts(t, s, p, page)
 		wantSrcs := slices.Clone(want)
 		slices.Sort(wantSrcs)
 		if gotSrcs := sortedSrcs(got); !slices.Equal(gotSrcs, wantSrcs) {
@@ -738,7 +775,8 @@ func TestBuiltPageScriptTags(t *testing.T) {
 		// own tag rather than an onload handler: only deferred tags have a document order to
 		// run in, and the viewer calls mermaid.initialize.
 		if p.Flags.Mermaid {
-			vendor, viewer := indexSrc(got, mermaidVendorURL), indexSrc(got, mermaidViewerURL)
+			vendor := indexSrc(got, assetURLt(t, "vendor/mermaid.min.js"))
+			viewer := indexSrc(got, assetURLt(t, "mermaid-viewer.js"))
 			if vendor >= 0 && viewer >= 0 {
 				if !got[vendor].deferred || !got[viewer].deferred {
 					t.Errorf("%s: a mermaid tag is not deferred, so the two run in the order the parser reaches them", rel)
@@ -750,7 +788,7 @@ func TestBuiltPageScriptTags(t *testing.T) {
 		}
 		// MathJax is configured by an inline tag, which the list above says nothing about,
 		// so its position against the runtime is checked in the document itself.
-		if tex := strings.Index(page, texURL); p.Flags.Math && tex >= 0 && strings.Index(page, "window.MathJax") > tex {
+		if tex := strings.Index(page, assetURLt(t, "vendor/tex-svg.js")); p.Flags.Math && tex >= 0 && strings.Index(page, "window.MathJax") > tex {
 			t.Errorf("%s: the MathJax configuration follows the runtime that reads it", rel)
 		}
 		// A reference is a promise the build has to keep: every asset a page names, script
@@ -806,9 +844,9 @@ func TestWriteAssetsRefusesNonASCIIScripts(t *testing.T) {
 	if err := WriteAssets(out); err != nil {
 		t.Fatalf("WriteAssets: %v", err)
 	}
-	for _, f := range []string{"_assets/site.js", "_assets/mermaid-viewer.js", "_assets/vendor/mermaid.min.js"} {
-		if !exists(out, f) {
-			t.Errorf("%s was not written", f)
+	for _, name := range []string{"site.js", "mermaid-viewer.js", "vendor/mermaid.min.js"} {
+		if !exists(out, strings.TrimPrefix(assetURLt(t, name), "/")) {
+			t.Errorf("%s was not written at its addressed name", name)
 		}
 	}
 
@@ -820,6 +858,148 @@ func TestWriteAssetsRefusesNonASCIIScripts(t *testing.T) {
 	if err := checkASCII("toc.js", []byte("ok\nvar s = '\u2014';\n")); err == nil ||
 		!strings.Contains(err.Error(), "toc.js:2:") {
 		t.Errorf("a glyph on the second line should report line 2, got %v", err)
+	}
+}
+
+// A content-addressed name is the whole cache-busting story: bytes that did not change
+// must keep the address pages already link, and bytes that did must not keep it, or a
+// reader's cache serves the file the build replaced. The suffix has to survive the
+// rewrite, because a host maps a file to its media type from it.
+func TestContentDigestAddressesBytes(t *testing.T) {
+	first := contentDigest([]byte("body { color: red }\n"))
+	if len(first) != 12 {
+		t.Errorf("digest %q is not 12 hex characters", first)
+	}
+	if again := contentDigest([]byte("body { color: red }\n")); again != first {
+		t.Errorf("the same bytes addressed twice: %q, then %q", first, again)
+	}
+	if moved := contentDigest([]byte("body { color: blue }\n")); moved == first {
+		t.Errorf("different bytes share the address %q", moved)
+	}
+	for _, c := range []struct{ name, want string }{
+		{"docs.css", "docs." + first + ".css"},
+		{"vendor/mermaid.min.js", "vendor/mermaid.min." + first + ".js"},
+	} {
+		if got := digestPath(c.name, first); got != c.want {
+			t.Errorf("digestPath(%q) = %q, want %q", c.name, got, c.want)
+		}
+	}
+}
+
+// The config's logo and favicon are the site's own files, and colophon names one in
+// every page header, so they are addressed like the binary's assets: a replaced file
+// arrives at a URL no cache has ever held. A file deleted mid-session must not leave the
+// site publishing an address with nothing behind it.
+func TestHashedStaticsMoveWithTheirBytes(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "source")
+	if err := os.MkdirAll(src, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	logo := filepath.Join(src, "logo.svg")
+	write := func(b []byte) {
+		t.Helper()
+		if err := os.WriteFile(logo, b, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(src, "index.md"), []byte("# Home\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	write([]byte("<svg></svg>\n"))
+	conf := filepath.Join(dir, "colophon.conf")
+	if err := os.WriteFile(conf, []byte("source: source\nlogo: logo.svg\nfavicon: logo.svg\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s, err := NewSite(conf, "")
+	if err != nil {
+		t.Fatalf("NewSite: %v", err)
+	}
+	// One file named twice is one address, and the address still says what it holds.
+	if s.Logo != s.Favicon || !strings.HasPrefix(s.Logo, "/"+assetDir+"/logo.") || !strings.HasSuffix(s.Logo, ".svg") {
+		t.Fatalf("logo %q, favicon %q: want one content-addressed /%s/logo.<digest>.svg", s.Logo, s.Favicon, assetDir)
+	}
+	first := strings.TrimPrefix(s.Logo, "/")
+	a, ok := s.requestAsset(first)
+	if !ok {
+		t.Fatalf("%s resolves to nothing", first)
+	}
+	if string(a.b) != "<svg></svg>\n" {
+		t.Errorf("%s resolves to the wrong bytes", first)
+	}
+	out := t.TempDir()
+	if err := s.writeStatics(out); err != nil {
+		t.Fatalf("writeStatics: %v", err)
+	}
+	if !exists(out, first) {
+		t.Errorf("%s was not written", first)
+	}
+
+	// A save moves the address, and the one the open pages hold stops resolving: serving
+	// new bytes behind the old name is the staleness the address exists to prevent, and a
+	// page still holding the old name is one reload away from asking for the new one.
+	write([]byte("<svg><circle/></svg>\n"))
+	if err := s.hashedStatics(); err != nil {
+		t.Fatalf("hashedStatics: %v", err)
+	}
+	second := strings.TrimPrefix(s.Logo, "/")
+	if second == first {
+		t.Fatal("a changed logo kept its address")
+	}
+	if _, ok := s.requestAsset(first); ok {
+		t.Errorf("%s still resolves, so new bytes could be served under the name of the old ones", first)
+	}
+	if !s.isHashedStatic("logo.svg") {
+		t.Error("the config logo is no hashed static, so saving it rebuilds nothing")
+	}
+	if s.isHashedStatic("index.md") {
+		t.Error("a page is a hashed static")
+	}
+
+	// A deletion is reported and changes nothing, which leaves every page naming an
+	// address that still has a file behind it.
+	if err := os.Remove(logo); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.hashedStatics(); err == nil {
+		t.Error("a deleted logo raised no error")
+	}
+	if strings.TrimPrefix(s.Logo, "/") != second {
+		t.Errorf("a deleted logo republished %q, want the site to stay on %s", s.Logo, second)
+	}
+}
+
+// An addressed asset is worth caching for a year, because nothing can change behind its
+// name. Everything a rebuild can move under an unchanged name is not cacheable at all.
+func TestAssetHeaders(t *testing.T) {
+	s := &Site{}
+	upath := strings.TrimPrefix(assetURLt(t, "docs.css"), "/")
+	a, ok := s.requestAsset(upath)
+	if !ok {
+		t.Fatalf("%s resolves to nothing", upath)
+	}
+	rec := httptest.NewRecorder()
+	serveAsset(rec, upath, a)
+	if got := rec.Header().Get("Cache-Control"); !strings.Contains(got, "immutable") {
+		t.Errorf("%s served with Cache-Control %q, want it immutable", upath, got)
+	}
+	if got := rec.Header().Get("Content-Type"); !strings.HasPrefix(got, "text/css") {
+		t.Errorf("%s served as %q", upath, got)
+	}
+	if want := embeddedAsset(t, "docs.css"); rec.Body.String() != want {
+		t.Errorf("%s served %d bytes, want the %d the binary holds", upath, rec.Body.Len(), len(want))
+	}
+	// A name with no digest in it addresses no bytes, so nothing can be served for it.
+	if _, ok := s.requestAsset(assetDir + "/docs.css"); ok {
+		t.Error("an unaddressed name resolved")
+	}
+
+	// pagefind names its own bundle, and those names do not address their contents, so
+	// one run's files must not be kept for the next.
+	rec = httptest.NewRecorder()
+	noStore(http.NotFoundHandler()).ServeHTTP(rec, httptest.NewRequest("GET", "/pagefind/pagefind.js", nil))
+	if got := rec.Header().Get("Cache-Control"); got != "no-store" {
+		t.Errorf("/pagefind/ served with Cache-Control %q, want no-store", got)
 	}
 }
 

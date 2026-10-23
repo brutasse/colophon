@@ -6,14 +6,14 @@
 <script>if (localStorage.theme) document.documentElement.dataset.theme = localStorage.theme;</script>
 <title>{{.Title}} · {{.SiteTitle}}</title>
 {{if .Favicon}}<link rel="icon" href="{{.Favicon}}">{{end}}
-<link rel="stylesheet" href="/_assets/docs.css">
-<link rel="stylesheet" href="/_assets/chroma.css">
+<link rel="stylesheet" href="{{asset "docs.css"}}">
+<link rel="stylesheet" href="{{asset "chroma.css"}}">
 {{if .AccentCSS}}<style>{{.AccentCSS}}</style>{{end}}
 {{if .Search}}<link rel="stylesheet" href="/pagefind/pagefind-component-ui.css">
 <script type="module" src="/pagefind/pagefind-component-ui.js"></script>{{end}}
 {{if .Math}}<script>window.MathJax = {tex: {inlineMath: [["\\(", "\\)"]], displayMath: [["\\[", "\\]"]]}, options: {skipHtmlTags: ["script","noscript","style","textarea","pre","code"]}};</script>
-<script defer src="/_assets/vendor/tex-svg.js"></script>{{end}}
-{{if .Mermaid}}<script defer src="/_assets/vendor/mermaid.min.js"></script>{{end}}
+<script defer src="{{asset "vendor/tex-svg.js"}}"></script>{{end}}
+{{if .Mermaid}}<script defer src="{{asset "vendor/mermaid.min.js"}}"></script>{{end}}
 {{if .Dev}}<script>(function(){
 /* A WebSocket, not a stream: a stream would take one of the browser's six
    connections per origin for the life of the page. */
@@ -45,8 +45,8 @@ watch();
 </div>
 {{if .Search}}<pagefind-modal reset-on-close></pagefind-modal>{{end}}
 {{/* initialises mermaid, so it must stay behind the vendor tag above: deferred scripts run in document order. */}}
-{{if .Mermaid}}<script defer src="/_assets/mermaid-viewer.js"></script>{{end}}
-<script defer src="/_assets/site.js"></script>
-{{if .TOC}}<script defer src="/_assets/toc.js"></script>{{end}}
+{{if .Mermaid}}<script defer src="{{asset "mermaid-viewer.js"}}"></script>{{end}}
+<script defer src="{{asset "site.js"}}"></script>
+{{if .TOC}}<script defer src="{{asset "toc.js"}}"></script>{{end}}
 </body>
 </html>

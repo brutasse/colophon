@@ -172,7 +172,7 @@ func (s *Site) Serve(addr string) error {
 	}
 
 	mux := http.NewServeMux()
-	mux.Handle("/pagefind/", http.FileServer(http.Dir(siteDir)))
+	mux.Handle("/pagefind/", noStore(http.FileServer(http.Dir(siteDir))))
 	mux.HandleFunc("/reload", func(w http.ResponseWriter, r *http.Request) {
 		// Same-origin requests only: Accept compares the Origin against r.Host,
 		// which is the whole access-control story for a loopback dev server.
@@ -232,14 +232,19 @@ func (s *Site) Serve(addr string) error {
 		}
 	})
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		// Nothing a rebuild can move is worth caching here: a page keeps its URL
+		// while its bytes change, and a source static keeps its name whatever it
+		// holds. /_assets/ is the exception, addressed by its bytes and cached for a
+		// year, which is what lets a reload pick up a new colophon on its own.
+		w.Header().Set("Cache-Control", "no-store")
 		upath := renderedKey(r.URL.Path)
-		if strings.HasPrefix(upath, "_assets/") {
-			b, err := assetsFS.ReadFile("assets/" + strings.TrimPrefix(upath, "_assets/"))
-			if err != nil {
+		if strings.HasPrefix(upath, assetDir+"/") {
+			a, ok := s.requestAsset(upath)
+			if !ok {
 				http.NotFound(w, r)
 				return
 			}
-			serveBytes(w, upath, b)
+			serveAsset(w, upath, a)
 			return
 		}
 		mu.Lock()
@@ -306,12 +311,13 @@ func (s *Site) Serve(addr string) error {
 				if err != nil {
 					continue
 				}
-				// An asset that no page renders and no include comment inlines
-				// changes no markup, so only pages and fragments reach `pending`.
-				if !strings.HasSuffix(rel, ".md") && s.includeReferrer(filepath.ToSlash(rel)) == nil {
+				rel = filepath.ToSlash(rel)
+				// A save that changes no markup is dropped: no page renders it, no
+				// include comment inlines it, no page header names it.
+				if !strings.HasSuffix(rel, ".md") && s.includeReferrer(rel) == nil && !s.isHashedStatic(rel) {
 					continue
 				}
-				pending[filepath.ToSlash(rel)] = true
+				pending[rel] = true
 				debounce.Reset(120 * time.Millisecond)
 			case <-debounce.C:
 				changed := pending
@@ -326,6 +332,15 @@ func (s *Site) Serve(addr string) error {
 					// A file that changed its `fragment:` verdict changes which
 					// files are pages at all, so only a full rebuild is right.
 					if was := s.forgetFragment(rel); was != s.isFragment(rel) {
+						full = true
+						break
+					}
+					// A logo or favicon is named in every page header, at a URL derived
+					// from its bytes, so a save re-digests it and re-wraps the site.
+					if s.isHashedStatic(rel) {
+						if err := s.hashedStatics(); err != nil {
+							fmt.Fprintln(os.Stderr, "rebuild:", err)
+						}
 						full = true
 						break
 					}
@@ -397,14 +412,28 @@ func (s *Site) Serve(addr string) error {
 	return http.ListenAndServe(addr, mux)
 }
 
-func serveBytes(w http.ResponseWriter, upath string, b []byte) {
-	switch {
-	case strings.HasSuffix(upath, ".css"):
+// serveAsset answers a request for a content-addressed asset. The address holds
+// the bytes' digest, so the file behind a URL never changes and a year of
+// "immutable" costs nothing: a page that wants new bytes asks for a new URL.
+func serveAsset(w http.ResponseWriter, upath string, a assetFile) {
+	switch path.Ext(upath) {
+	case ".css":
 		w.Header().Set("Content-Type", "text/css; charset=utf-8")
-	case strings.HasSuffix(upath, ".js"):
+	case ".js":
 		w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
 	}
-	w.Write(b)
+	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	w.Write(a.b)
+}
+
+// noStore keeps a response out of the cache, for a dev resource whose name does
+// not address its contents: pagefind's bundle keeps its file names between index
+// runs, so a previous run's files would otherwise be served to this one.
+func noStore(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		h.ServeHTTP(w, r)
+	})
 }
 
 // checkChanged runs the link check on just-rebuilt pages without killing the server

@@ -94,6 +94,7 @@ jobs:
               -v "$PWD/_build/smoke-$arch:/out" \
               "$ref" build --out /out
             test -d "_build/smoke-$arch/pagefind"
-            test -f "_build/smoke-$arch/_assets/docs.css"
+            ls "_build/smoke-$arch"/_assets/docs.*.css > /dev/null
+            test ! -e "_build/smoke-$arch/_assets/docs.css"
             grep -q pagefind-modal "_build/smoke-$arch/index.html"
           done
