@@ -136,16 +136,11 @@ func (s *Site) renderSidebar(p *Page) string {
 // built page, which is what an item of a `nav: list` renders to.
 var navSectionItemRe = regexp.MustCompile(`<li><a[^>]*href="([^"]+\.html)"[^>]*>[^<]*</a></li>`)
 
-// navSectionLists lists a child page's top-level sections as a sub-list under the
-// list item that links to it, so an index whose child glues several documents into
-// one file lists each of those documents instead of one line for the whole file.
-// Which sections is the question `#all` answers: normally the heading the child's
-// title came from is the file's own name and stays the parent item, and with `#all`
-// the index says that heading is a document like the rest, so it joins the list.
-// Only items the nav took as children are touched: an author who wrote a sub-list
-// under a link broke the all-links rule, so that list is prose and stays as written.
-// The new items reuse the item's own href with a heading anchor, which keeps them
-// file-relative like the links the builder rewrote.
+// navSectionLists lists a child page's top-level sections as a sub-list under the list
+// item that links to it. Only items the nav took as children are touched: a sub-list an
+// author wrote by hand broke the all-links rule, so that one is prose and stays as
+// written. The generated items reuse the item's own href with a heading anchor, so they
+// stay file-relative like every other page link.
 func (s *Site) navSectionLists(p *Page, body string) string {
 	sections := map[string][]heading{}
 	for _, rel := range p.NavChildren {

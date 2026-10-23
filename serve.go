@@ -20,12 +20,10 @@ import (
 // Serve runs the dev server: pages rebuilt in memory per change, statics
 // served straight from source/, WebSocket-triggered browser reload.
 //
-// The reload channel is a WebSocket per open document rather than the
-// EventSource it was. A stream is one of a browser's six HTTP/1.1 connections
-// to an origin, held for the whole life of the page, so six open doc pages left
-// a seventh navigation queued with no socket to open — and a navigation in an
-// existing tab deadlocked, since the only freeable slot was that tab's own
-// stream, torn down only after the new document committed.
+// The reload channel is one WebSocket per open document, not a stream: a stream holds
+// one of the six HTTP/1.1 connections a browser allows per origin for the whole life
+// of the page, so six open docs starve a seventh navigation, and a reload in an
+// existing tab deadlocks behind its own stream.
 func (s *Site) Serve(addr string) error {
 	s.Dev = true
 	if err := s.BuildAll(); err != nil {
@@ -409,9 +407,8 @@ func serveBytes(w http.ResponseWriter, upath string, b []byte) {
 	w.Write(b)
 }
 
-// checkChanged runs the link check on just-rebuilt pages and reports
-// problems without killing the server. Reachability is a property of the whole
-// link graph, so it is recomputed here and reported only for the saved pages.
+// checkChanged runs the link check on just-rebuilt pages without killing the server
+// on a failure, and recomputes reachability because it depends on every page.
 func (s *Site) checkChanged(changed map[string]bool) {
 	byOut := map[string]*Page{}
 	for _, p := range s.Pages {

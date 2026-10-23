@@ -13,12 +13,10 @@
 <script type="module" src="/pagefind/pagefind-component-ui.js"></script>{{end}}
 {{if .Math}}<script>window.MathJax = {tex: {inlineMath: [["\\(", "\\)"]], displayMath: [["\\[", "\\]"]]}, options: {skipHtmlTags: ["script","noscript","style","textarea","pre","code"]}};</script>
 <script defer src="/_assets/vendor/tex-svg.js"></script>{{end}}
-{{if .Mermaid}}<script defer src="/_assets/vendor/mermaid.min.js" onload="mermaid.initialize({startOnLoad: true, securityLevel: 'strict'})"></script>{{end}}
+{{if .Mermaid}}<script defer src="/_assets/vendor/mermaid.min.js"></script>{{end}}
 {{if .Dev}}<script>(function(){
-/* Hot reload over a WebSocket rather than an EventSource: a stream holds one of
-   the browser's six HTTP/1.1 connections per origin for the whole life of the
-   page, so six open doc pages starve the seventh navigation. A WebSocket holds
-   no such slot, and the server pings only the tabs showing a changed page. */
+/* A WebSocket, not a stream: a stream would take one of the browser's six
+   connections per origin for the life of the page. */
 function watch(){
   var ws = new WebSocket((location.protocol == "https:" ? "wss://" : "ws://") +
     location.host + "/reload?path=" + encodeURIComponent(location.pathname));
@@ -46,140 +44,9 @@ watch();
 </main>
 </div>
 {{if .Search}}<pagefind-modal reset-on-close></pagefind-modal>{{end}}
-{{if .Mermaid}}<script>(function(){
-/* Diagram viewer. A rendered diagram keeps its natural size inside a scroll box,
-   and the control chip over it gives the reader zoom in, zoom out, reset, and
-   expand; expand lifts the box onto the screen at the zoom it already had. A
-   diagram starts fitted, so nothing moves until a control is used and a page
-   without JavaScript still shows it. mermaid's startOnLoad offers no callback, so
-   wait for the SVGs to appear. */
-var MIN=0.25,MAX=8;
-function natural(svg){
-  var vb=svg.viewBox&&svg.viewBox.baseVal;
-  if(vb&&vb.width)return{w:vb.width,h:vb.height};
-  var b=svg.getBBox();return{w:b.width,h:b.height};}
-function size(view,px){
-  var svg=view.querySelector('svg'),n=view.nat;
-  // Capture the style mermaid authored the first time we are about to change it.
-  // Not at wrap time: mermaid applies its max-width cap after inserting the SVG,
-  // so an early snapshot can come back empty and reset would then upscale.
-  if(view.authored===null)view.authored=svg.getAttribute('style')||'';
-  view.px=Math.round(Math.min(MAX*n.w,Math.max(MIN*n.w,px)));
-  // mermaid caps the SVG at its natural width inline (useMaxWidth), and that cap
-  // has to come off before an explicit width means anything.
-  svg.style.maxWidth='none';
-  svg.style.width=view.px+'px';
-  svg.style.height=Math.round(view.px*n.h/n.w)+'px';}
-// reset is the state before anything was touched, so it restores mermaid's own
-// inline style verbatim: dropping the max-width cap it authored would let the SVG
-// grow past its natural size and upscale the drawing.
-function reset(view){
-  if(view.authored===null)return;
-  view.px=null;
-  view.querySelector('svg').setAttribute('style',view.authored);}
-function shown(view){var svg=view.querySelector('svg');return view.px||svg.getBoundingClientRect().width;}
-function btn(text,label,onclick){
-  var b=document.createElement('button');
-  b.type='button';b.className='mm-btn';b.textContent=text;
-  b.setAttribute('aria-label',label);b.title=label;
-  b.onclick=function(e){e.preventDefault();onclick();};
-  return b;}
-function decorate(pre){
-  var svg=pre.querySelector('svg');
-  if(!svg||pre.parentNode.className.indexOf('mm-view')>=0)return;
-  var n=natural(svg);if(!n.w)return;
-  var view=document.createElement('div');
-  view.className='mm-view';view.nat=n;
-  view.authored=null;view.open=false;
-  pre.parentNode.insertBefore(view,pre);
-  var bar=document.createElement('div');bar.className='mm-bar';
-  bar.appendChild(btn('\u2212','zoom out',function(){size(view,shown(view)/1.25);}));
-  bar.appendChild(btn('+','zoom in',function(){size(view,shown(view)*1.25);}));
-  bar.appendChild(btn('\u27f2','reset zoom',function(){reset(view);}));
-  var expand=btn('\u26f6','expand',function(){setOpen(!view.open);});
-  bar.appendChild(expand);
-  // Only one diagram can be on the screen at a time: two panels inset 1rem from the
-  // viewport are exactly coincident and both opaque, so the reader could never reach
-  // the one underneath. setOpen is hung on the view so another view can close this
-  // one, which is also where the label and the body class stay consistent.
-  view.setOpen=setOpen;
-  function setOpen(open){
-    open=!!open;if(view.open===open)return;
-    if(open)[].slice.call(document.querySelectorAll('.mm-view.mm-full')).forEach(function(other){
-      if(other!==view&&other.setOpen)other.setOpen(false);});
-    view.open=open;
-    view.classList.toggle('mm-full',open);
-    document.body.classList.toggle('mm-fullscreen',!!document.querySelector('.mm-view.mm-full'));
-    var label=open?'collapse':'expand';
-    expand.textContent=open?'\u2715':'\u26f6';
-    expand.setAttribute('aria-label',label);expand.title=label;}
-  view.appendChild(bar);view.appendChild(pre);
-  // a scroll box a keyboard cannot reach is a trap
-  pre.tabIndex=0;pre.setAttribute('role','region');
-  pre.setAttribute('aria-label','diagram, scrollable; the controls over it zoom and expand it');
-  var drag=null;
-  pre.addEventListener('pointerdown',function(e){
-    if(e.button!==0)return;
-    drag={x:e.clientX,y:e.clientY,l:pre.scrollLeft,t:pre.scrollTop};
-    view.classList.add('mm-grab');});
-  pre.addEventListener('pointermove',function(e){
-    if(!drag)return;
-    pre.scrollLeft=drag.l-(e.clientX-drag.x);
-    pre.scrollTop=drag.t-(e.clientY-drag.y);});
-  ['pointerup','pointercancel','pointerleave'].forEach(function(ev){
-    pre.addEventListener(ev,function(){drag=null;view.classList.remove('mm-grab');});});
-  // ctrl/cmd + wheel is also what a trackpad pinch sends
-  pre.addEventListener('wheel',function(e){
-    if(!e.ctrlKey&&!e.metaKey)return;
-    e.preventDefault();
-    size(view,shown(view)*(e.deltaY<0?1.1:1/1.1));},{passive:false});
-  document.addEventListener('keydown',function(e){
-    if(e.key==='Escape'&&view.open)setOpen(false);});
-}
-function scan(){
-  var pending=0;
-  [].slice.call(document.querySelectorAll('pre.mermaid')).forEach(function(pre){
-    if(pre.querySelector('svg'))decorate(pre);else pending++;});
-  if(pending&&scan.tries++<60)setTimeout(scan,250);}
-scan.tries=0;
-if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',scan);else scan();})();</script>{{end}}
-<script>(function(){
-var btn=document.querySelector(".theme-toggle");if(!btn)return;
-var next={"system":"light","light":"dark","dark":"system"};
-var glyph={"system":"\u25d0","light":"\u2600","dark":"\u263e"};
-function state(){return localStorage.theme||"system";}
-function paint(){var s=state();btn.textContent=glyph[s]+" "+s;btn.title="theme: "+s+" \u2014 click for "+next[s];}
-btn.onclick=function(){var n=next[state()];
-if(n==="system"){delete localStorage.theme;delete document.documentElement.dataset.theme;}
-else{localStorage.theme=n;document.documentElement.dataset.theme=n;}
-paint();};
-paint();})();</script>
-<script>(function(){
-var btn=document.querySelector(".nav-toggle");if(!btn)return;
-function open(o){document.body.classList.toggle("nav-open",o);btn.setAttribute("aria-expanded",o);}
-btn.onclick=function(){open(!document.body.classList.contains("nav-open"));};
-document.querySelector(".scrim").onclick=function(){open(false);};
-document.getElementById("sidebar").addEventListener("click",function(e){if(e.target.closest("a"))open(false);});
-document.addEventListener("keydown",function(e){if(e.key==="Escape")open(false);});})();</script>
-{{if .TOC}}<script>(function(){
-var rail=document.querySelector(".toc");if(!rail)return;
-var main=document.querySelector("main"),links=[].slice.call(rail.querySelectorAll("a")),
-heads=links.map(function(a){return document.getElementById(decodeURIComponent(a.hash.slice(1)));});
-// The rail is capped at the viewport height and scrolls on its own, so a page with more
-// headings than the screen leaves the highlighted link sitting below its fold. Keep five
-// links of lead under the highlight, and five above for a reader scrolling back up, so
-// the section coming next is named before it is reached. docs.css animates the move.
-function keep(i){var n=links.length,rr=rail.getBoundingClientRect(),off=rail.scrollTop-rr.top,
-low=links[Math.min(i+5,n-1)].getBoundingClientRect().bottom,
-up=links[Math.max(i-5,0)].getBoundingClientRect().top,el=links[i].getBoundingClientRect(),
-lo=off+low-rail.clientHeight,hi=off+up;
-// five above and five below do not always fit in the rail together: then clear the highlight
-if(lo>hi){lo=off+el.bottom-rail.clientHeight+12;hi=off+el.top-12;}
-if(rail.scrollTop<lo)rail.scrollTop=lo;else if(rail.scrollTop>hi)rail.scrollTop=hi;}
-function sync(){var top=main.getBoundingClientRect().top,act=-1;
-for(var i=0;i<heads.length;i++){if(heads[i]&&heads[i].getBoundingClientRect().top-top<=64)act=i;}
-links.forEach(function(l,i){l.classList.toggle("active",i===act);});
-if(act>=0)keep(act);}
-main.addEventListener("scroll",sync,{passive:true});sync();})();</script>{{end}}
+{{/* initialises mermaid, so it must stay behind the vendor tag above: deferred scripts run in document order. */}}
+{{if .Mermaid}}<script defer src="/_assets/mermaid-viewer.js"></script>{{end}}
+<script defer src="/_assets/site.js"></script>
+{{if .TOC}}<script defer src="/_assets/toc.js"></script>{{end}}
 </body>
 </html>

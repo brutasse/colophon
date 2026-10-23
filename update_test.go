@@ -446,8 +446,7 @@ func TestRunUpdateRefusesToTouchAnything(t *testing.T) {
 	})
 }
 
-// TestInstallReleaseFromZip covers the Windows asset, the one release archive
-// that is not a tarball.
+// The Windows asset is the one release archive that is not a tarball.
 func TestInstallReleaseFromZip(t *testing.T) {
 	var raw bytes.Buffer
 	zw := zip.NewWriter(&raw)

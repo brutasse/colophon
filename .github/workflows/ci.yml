@@ -35,6 +35,14 @@ jobs:
           test -f _build/site/_assets/docs.css
           test -f _build/site/_static/logo.svg
           test ! -e _build/site/gated/index.html
+      # The page scripts are tested in JavaScript, against jsdom and the fixture site
+      # built above. The node on the runner image is enough, and 36 packages install in
+      # a second, so this needs no setup-node action and no dependency cache.
+      - name: Page script tests
+        run: |
+          set -eu
+          npm ci --prefix test/js
+          npm --prefix test/js test
   # The installer readers pipe into a shell, run against an archive built here.
   # release.yml proves the published one; this proves the script itself, so a
   # broken install path fails the pull request that broke it instead of failing

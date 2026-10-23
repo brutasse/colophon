@@ -2,6 +2,7 @@ package main
 
 import (
 	"embed"
+	"fmt"
 	"html/template"
 	"io/fs"
 	"os"
@@ -52,10 +53,36 @@ func WriteAssets(out string) error {
 		if err != nil {
 			return err
 		}
+		// Upstream's minified files hold literal glyphs and are not ours to rewrite.
+		if strings.HasSuffix(rel, ".js") && !strings.HasPrefix(rel, "vendor/") {
+			if err := checkASCII(rel, b); err != nil {
+				return err
+			}
+		}
 		dst := filepath.Join(out, "_assets", filepath.FromSlash(rel))
 		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 			return err
 		}
 		return os.WriteFile(dst, b, 0o644)
 	})
+}
+
+// checkASCII rejects a non-ASCII byte in an extracted script: a host that serves a
+// .js without a charset has its bytes read as latin-1, so a literal glyph arrives as
+// mojibake with nothing failing. The scripts keep their glyphs as \u escapes.
+func checkASCII(name string, b []byte) error {
+	line, col := 1, 0
+	for _, c := range b {
+		col++
+		if c == '\n' {
+			line++
+			col = 0
+			continue
+		}
+		if c > 0x7f {
+			return fmt.Errorf("assets/%s:%d:%d: non-ASCII byte 0x%02x: write the glyph as a \\u escape, or serve the file with a charset",
+				name, line, col, c)
+		}
+	}
+	return nil
 }

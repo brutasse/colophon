@@ -3,3 +3,5 @@
 /_build/
 # Release archives: the release workflow's build step, and a local run of it.
 /dist/
+# The page tests' dependencies: `npm ci --prefix test/js` writes this.
+/test/js/node_modules/

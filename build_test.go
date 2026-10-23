@@ -3,13 +3,14 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"regexp"
+	"slices"
 	"strings"
 	"testing"
 )
 
-// buildFixture renders a testdata site into a temp dir the way `colophon
-// build` does — pages, embedded assets, statics — minus the search index,
-// which is exercised by the end-to-end CI run rather than here.
+// buildFixture renders a testdata site into a temp dir the way `colophon build` does —
+// pages, embedded assets, statics — minus the search index, which needs the network.
 func buildFixture(t *testing.T, fixture, tags string) (string, *Site) {
 	t.Helper()
 	dir := filepath.Join("testdata", fixture)
@@ -59,8 +60,6 @@ func wantNot(t *testing.T, page, html string, needles ...string) {
 	}
 }
 
-// TestBuildClean is the smoke test: every documented construct in
-// testdata/site renders, and the link gate stays silent about it.
 // sliceBetween returns the first span of a built page that starts at one marker
 // and stops at the next closing marker, which is how a test looks at the rail or
 // the sidebar without matching markup the other one also writes.
@@ -77,6 +76,8 @@ func sliceBetween(t *testing.T, page, html, start, end string) string {
 	return rest
 }
 
+// Every documented construct in testdata/site renders, and the link gate stays silent
+// about it.
 func TestBuildClean(t *testing.T) {
 	out, s := buildFixture(t, "site", "")
 
@@ -166,68 +167,18 @@ func TestBuildClean(t *testing.T) {
 	// the title, so look at the rail only.
 	rail := sliceBetween(t, "guide/index.html", guide, `<nav class="toc"`, "</nav>")
 	wantNot(t, "guide/index.html rail", rail, `href="#guide"`)
-	// The rail is capped at the viewport height, so its scroll-spy has to move the rail to
-	// the heading it highlights and keep part of the list in sight around it; without that
-	// the highlight lands out of view on a page with more headings than the screen.
-	spy := sliceBetween(t, "guide/index.html", guide, `var rail=document.querySelector(".toc")`, "</script>")
-	want(t, "guide/index.html scroll-spy", spy,
-		"if(act>=0)keep(act);",
-		"links[Math.min(i+5,n-1)]", // lead below the highlight,
-		"links[Math.max(i-5,0)]",   // and above it for a reader scrolling back up
-	)
-
 	second := readPage(t, out, "guide/second.html")
 	want(t, "guide/second.html", second,
-		`/_assets/vendor/tex-svg.js`, // math: true ships MathJax
-		`<pre class="mermaid">`,
-		`/_assets/vendor/mermaid.min.js`,
+		`<pre class="mermaid">`, // the fence becomes the hook the viewer wraps
 		`href="first.html#target-section"`,
-		// the diagram viewer: scroll box, zoom, pan, expand
-		`mm-view`,
-		`'reset zoom'`,
-		// reset puts back the inline style mermaid authored, max-width cap included
-		`svg.getAttribute('style')`,
-		// expand is one diagram at a time, through one function Escape also takes
-		`view.setOpen=setOpen`,
 	)
-	// The zoom read-out and the fit/natural pair of buttons are gone: the chip
-	// carries zoom in, zoom out, reset, and expand only.
-	wantNot(t, "guide/second.html", second, "mm-zoom")
-	wantNot(t, "guide/second.html", second, "natural size")
-	// A page without a diagram carries no viewer of its own.
-	wantNot(t, "index.html", index, "mm-view")
-	// The theme styles what the viewer adds; the shrink-to-fit rule that made a
-	// large diagram unreadable must not come back.
-	css := readPage(t, out, "_assets/docs.css")
-	want(t, "_assets/docs.css", css,
-		".mm-view",
-		"overflow: auto; max-height: min(75vh, 42rem)",
-		// a diagram takes the width of the pane, not just the text column
-		"@container (min-width: 50rem) { .mm-view { width: 100cqi; } }",
-		// the rail follows its highlight with an animated scroll, and stops for a reader
-		// who asks for no motion
-		"@media (prefers-reduced-motion: reduce) { .toc { scroll-behavior: auto; } }",
-		// the control chip floats inside the diagram's frame
-		".mm-bar { position: absolute; top: .45rem; right: .6rem",
-		// expand covers the screen: the pane's width and the margin that doubles the
-		// inset both have to come off, or the panel stays inside the pane
-		".mm-view.mm-full { position: fixed; inset: 1rem; width: auto; margin: 0",
-		".mm-full pre.mermaid { height: 100%; max-height: none",
-	)
-	// The scroll box is the panel, so it takes the panel's height and not a second
-	// guess at the viewport height, which left a band of panel under the diagram.
-	wantNot(t, "_assets/docs.css", css, "calc(100vh - 6rem)")
-	// The smooth one is the rail's own rule, not main's: only a box that scrolls on its
-	// own can need a follow.
-	want(t, "_assets/docs.css .toc", sliceBetween(t, "_assets/docs.css", css, "\n  .toc {\n", "\n  }"),
-		"max-height: calc(100vh - 4rem); overflow-y: auto", "scroll-behavior: smooth")
 
 	embeds := readPage(t, out, "embeds.html")
 	want(t, "embeds.html", embeds, `src="https://embed.example.com/doc/1"`)
 	wantNot(t, "embeds.html", embeds, "not-allowed.example.net")
 
 	// Assets are extracted from the binary, statics copied verbatim.
-	for _, f := range []string{"_assets/docs.css", "_assets/chroma.css", "_assets/vendor/mermaid.min.js", "_static/logo.svg"} {
+	for _, f := range []string{"_assets/docs.css", "_assets/chroma.css", "_assets/site.js", "_assets/toc.js", "_assets/mermaid-viewer.js", "_assets/vendor/mermaid.min.js", "_static/logo.svg"} {
 		if !exists(out, f) {
 			t.Errorf("%s was not written", f)
 		}
@@ -239,8 +190,8 @@ func TestBuildClean(t *testing.T) {
 	}
 }
 
-// TestGatedTagBuild covers the --tags subtree: built on demand, and reported
-// as informational by the link gate because upstream owns it.
+// The --tags subtree is built on demand and reported as informational by the link gate,
+// because upstream owns it.
 func TestGatedTagBuild(t *testing.T) {
 	out, s := buildFixture(t, "site", "gated")
 	if len(s.Pages) != 9 {
@@ -268,9 +219,8 @@ func TestGatedTagBuild(t *testing.T) {
 	}
 }
 
-// TestNoDefaultTags pins the default: the tags key is the only source of gated
-// subtrees, so a projects/ directory is ordinary content until colophon.conf
-// declares it, and its pages are ours to check rather than upstream's.
+// The tags key is the only source of gated subtrees, so a projects/ directory is
+// ordinary content until colophon.conf declares it, and its pages are ours to check.
 func TestNoDefaultTags(t *testing.T) {
 	dir := t.TempDir()
 	src := filepath.Join(dir, "source")
@@ -313,8 +263,7 @@ func TestNoDefaultTags(t *testing.T) {
 	}
 }
 
-// TestBrokenSiteProblems checks that the gate's rules fire on the link shapes
-// it exists to catch.
+// The gate's rules have to fire on the link shapes they exist to catch.
 func TestBrokenSiteProblems(t *testing.T) {
 	out, s := buildFixture(t, "broken", "")
 	errs, _, _ := s.collectLinkProblems()
@@ -355,8 +304,7 @@ func TestBrokenSiteProblems(t *testing.T) {
 	wantNot(t, "index.html", home, "--accent:")
 }
 
-// TestNewSiteConfigErrors covers config mistakes that must fail the build
-// rather than ship a broken or looser site.
+// Config mistakes have to fail the build rather than ship a broken or looser site.
 func TestNewSiteConfigErrors(t *testing.T) {
 	dir := t.TempDir()
 	src := filepath.Join(dir, "source")
@@ -394,9 +342,8 @@ func TestNewSiteConfigErrors(t *testing.T) {
 	}
 }
 
-// TestNewSiteRequiresConf pins the gate: colophon.conf is the entry point, and
-// it is the file that says where the pages are, so neither a missing file nor a
-// file that names no source directory builds anything.
+// colophon.conf is the entry point and the file that says where the pages are, so
+// neither a missing file nor one naming no source directory builds anything.
 func TestNewSiteRequiresConf(t *testing.T) {
 	dir := t.TempDir()
 	src := filepath.Join(dir, "source")
@@ -441,8 +388,7 @@ func TestNewSiteRequiresConf(t *testing.T) {
 	}
 }
 
-// TestIframeHostsDefaultDenies pins the sanitizer's default: with no
-// iframe-hosts configured, petroglyph's DisplayPolicy applies unchanged.
+// With no iframe-hosts configured, petroglyph's DisplayPolicy applies unchanged.
 func TestIframeHostsDefaultDenies(t *testing.T) {
 	hosts, err := iframeHosts("")
 	if err != nil || len(hosts) != 0 {
@@ -462,11 +408,10 @@ func TestIframeHostsDefaultDenies(t *testing.T) {
 	}
 }
 
-// TestOrphanRule pins the reachability rule and the fragment declaration that
-// replaces the old `-fragments-` file name: a `nav: list` entry or a prose link
-// rescues a page, `orphan: true` opts out, `fragment: true` keeps a file out of
-// the build, and one unlisted section is reported once, on the page whose nav
-// entry is missing.
+// The reachability rule and the fragment declaration: a `nav: list` entry or a prose
+// link rescues a page, `orphan: true` opts out, `fragment: true` keeps a file out of
+// the build, and one unlisted section is reported once, on the page whose nav entry is
+// missing.
 func TestOrphanRule(t *testing.T) {
 	dir := t.TempDir()
 	src := filepath.Join(dir, "source")
@@ -521,11 +466,10 @@ func TestOrphanRule(t *testing.T) {
 	}
 }
 
-// TestNavAnchorRule covers the nav list item that fails silently: a link to a
-// section of a page reads like a nav entry to its author, but a `nav: list` page
-// takes children only from items that are one plain page link, so the item leaves
-// the whole list as prose and the pages beside it lose their breadcrumbs, their
-// sidebar row, and their place in prev/next with nothing said about it.
+// A link to a section of a page reads like a nav entry to its author, but a `nav: list`
+// page takes children only from items that are one plain page link, so the item leaves
+// the whole list as prose and the pages beside it lose their breadcrumbs, their sidebar
+// row, and their place in prev/next with nothing said about it.
 func TestNavAnchorRule(t *testing.T) {
 	dir := t.TempDir()
 	src := filepath.Join(dir, "source")
@@ -584,11 +528,8 @@ func TestNavAnchorRule(t *testing.T) {
 	}
 }
 
-// TestDevReloadUsesWebSocket pins the shape of the dev reload channel. An SSE
-// stream is one of the browser's six HTTP/1.1 connections to an origin, held for
-// the whole life of the page, so one per open page meant six doc tabs left a
-// seventh navigation queued with no socket to open, and a navigation in an
-// existing tab deadlocked behind its own stream. A WebSocket holds no such slot.
+// The dev reload channel is a WebSocket, not a stream; serve.go's Serve comment holds
+// why.
 func TestDevReloadUsesWebSocket(t *testing.T) {
 	out, s := buildFixture(t, "site", "")
 	// The shipped site has no reload endpoint at all, and no client for one.
@@ -611,6 +552,228 @@ func TestDevReloadUsesWebSocket(t *testing.T) {
 		if k := renderedKey("/" + p.OutPath); k != p.OutPath {
 			t.Errorf("%s: renderedKey(%q) = %q, want the page's own output path", rel, "/"+p.OutPath, k)
 		}
+	}
+}
+
+// assetRefRe matches an asset URL a page points at: src="/_assets/site.js".
+var assetRefRe = regexp.MustCompile(`(?:src|href)="/(_assets/[^"]+)"`)
+
+// builtPages lists every page of a built site.
+func builtPages(out string) ([]string, error) {
+	var paths []string
+	var walkErr error
+	var walk func(dir string) error
+	walk = func(dir string) error {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			return err
+		}
+		for _, e := range entries {
+			p := filepath.Join(dir, e.Name())
+			switch {
+			case e.IsDir():
+				if err := walk(p); err != nil {
+					return err
+				}
+			case strings.HasSuffix(e.Name(), ".html"):
+				paths = append(paths, p)
+			}
+		}
+		return nil
+	}
+	if walkErr = walk(out); walkErr != nil {
+		return nil, walkErr
+	}
+	return paths, nil
+}
+
+// scriptTagRe matches a script's opening tag and srcAttrRe its src. Reading the tags is
+// what keeps this test off the scripts' bytes: which page pays for a script is a
+// question about the template, and what the script then does is tested in JavaScript.
+var scriptTagRe = regexp.MustCompile(`(?s)<script\b([^>]*)>`)
+var srcAttrRe = regexp.MustCompile(`src="([^"]*)"`)
+
+// pageScript is one external script tag. The deferred flag is part of what a tag means:
+// deferred scripts run in document order, which is the only order a page's scripts have.
+type pageScript struct {
+	src      string
+	deferred bool
+}
+
+func pageScripts(page string) []pageScript {
+	var scripts []pageScript
+	for _, tag := range scriptTagRe.FindAllStringSubmatch(page, -1) {
+		m := srcAttrRe.FindStringSubmatch(tag[1])
+		if m == nil {
+			continue // an inline tag: the theme head hook, the MathJax config, the dev reload client
+		}
+		scripts = append(scripts, pageScript{src: m[1], deferred: strings.Contains(tag[1], "defer")})
+	}
+	return scripts
+}
+
+// sortedSrcs lists the scripts in order by name, so a second copy of one or a src that
+// arrived by a relative path — a different URL on a page in a subdirectory — cannot
+// pass for the tag it copies.
+func sortedSrcs(scripts []pageScript) []string {
+	out := make([]string, len(scripts))
+	for i, sc := range scripts {
+		out[i] = sc.src
+	}
+	slices.Sort(out)
+	return out
+}
+
+func indexSrc(scripts []pageScript, src string) int {
+	for i, sc := range scripts {
+		if sc.src == src {
+			return i
+		}
+	}
+	return -1
+}
+
+const (
+	mermaidVendorURL = "/_assets/vendor/mermaid.min.js"
+	mermaidViewerURL = "/_assets/mermaid-viewer.js"
+	texURL           = "/_assets/vendor/tex-svg.js"
+	siteURL          = "/_assets/site.js"
+	tocURL           = "/_assets/toc.js"
+	searchURL        = "/pagefind/pagefind-component-ui.js"
+)
+
+// wantScripts are the scripts a page earns its tags on, from the same values wrapPage
+// hands the template. Deriving them from the site rather than from the page's own bytes
+// is what makes a tag the template dropped a failure: a page can be missing the spy it
+// needs as quietly as it can carry one it has no rail for.
+func wantScripts(s *Site, p *Page, page string) []string {
+	var want []string
+	if s.Search {
+		want = append(want, searchURL)
+	}
+	if p.Flags.Math {
+		want = append(want, texURL)
+	}
+	if p.Flags.Mermaid {
+		want = append(want, mermaidVendorURL, mermaidViewerURL)
+	}
+	want = append(want, siteURL) // the theme control and the mobile nav, one file for the whole site
+	// The rail is toc.js's whole subject — its first line gives up without one — so the
+	// tag follows the <nav> and no flag decides either of them.
+	if strings.Contains(page, `<nav class="toc"`) {
+		want = append(want, tocURL)
+	}
+	return want
+}
+
+// TestBuiltPageScriptTags asks every page of the built fixture one question: does it load
+// exactly the scripts its own flags and markup call for? A script a page has no use for
+// costs a download on every visit to it, and a missing one leaves the reader a control
+// that does nothing. What the scripts do with the markup they find is tested in
+// JavaScript under test/js, against this same built site.
+func TestBuiltPageScriptTags(t *testing.T) {
+	out, s := buildFixture(t, "site", "")
+	byOut := make(map[string]*Page, len(s.Pages))
+	for _, p := range s.Pages {
+		byOut[p.OutPath] = p
+	}
+
+	check := func(t *testing.T, rel string, p *Page, page string) {
+		t.Helper()
+		got := pageScripts(page)
+		want := wantScripts(s, p, page)
+		wantSrcs := slices.Clone(want)
+		slices.Sort(wantSrcs)
+		if gotSrcs := sortedSrcs(got); !slices.Equal(gotSrcs, wantSrcs) {
+			t.Errorf("%s loads %v, want %v", rel, gotSrcs, wantSrcs)
+		}
+
+		// The one dependency among the scripts, and the reason the vendor file needs its
+		// own tag rather than an onload handler: only deferred tags have a document order to
+		// run in, and the viewer calls mermaid.initialize.
+		if p.Flags.Mermaid {
+			vendor, viewer := indexSrc(got, mermaidVendorURL), indexSrc(got, mermaidViewerURL)
+			if vendor >= 0 && viewer >= 0 {
+				if !got[vendor].deferred || !got[viewer].deferred {
+					t.Errorf("%s: a mermaid tag is not deferred, so the two run in the order the parser reaches them", rel)
+				}
+				if vendor > viewer {
+					t.Errorf("%s: the mermaid vendor tag follows the viewer, so the viewer would run first", rel)
+				}
+			}
+		}
+		// MathJax is configured by an inline tag, which the list above says nothing about,
+		// so its position against the runtime is checked in the document itself.
+		if tex := strings.Index(page, texURL); p.Flags.Math && tex >= 0 && strings.Index(page, "window.MathJax") > tex {
+			t.Errorf("%s: the MathJax configuration follows the runtime that reads it", rel)
+		}
+		// A reference is a promise the build has to keep: every asset a page names, script
+		// or stylesheet, has to be a file WriteAssets wrote.
+		for _, m := range assetRefRe.FindAllStringSubmatch(page, -1) {
+			if !exists(out, m[1]) {
+				t.Errorf("%s references /%s, which was not written", rel, m[1])
+			}
+		}
+	}
+
+	pages, err := builtPages(out)
+	if err != nil {
+		t.Fatalf("walk the built site: %v", err)
+	}
+	var checked int
+	for _, path := range pages {
+		rel, err := filepath.Rel(out, path)
+		if err != nil {
+			t.Fatalf("relative path of %s: %v", path, err)
+		}
+		rel = filepath.ToSlash(rel)
+		p, ok := byOut[rel]
+		if !ok {
+			t.Errorf("%s is in the output tree but is not a page of the site", rel)
+			continue
+		}
+		checked++
+		check(t, rel, p, readPage(t, out, rel))
+	}
+	if checked != len(s.Pages) {
+		t.Errorf("%d of the site's %d pages are in the output tree", checked, len(s.Pages))
+	}
+
+	// Every page above agreeing that none of them loads the search bundle says nothing on
+	// its own, because Search is set by `colophon build` with a pagefind bundle and by
+	// serve, and this fixture does neither. Turning it on is what gives that row an edge.
+	t.Run("with search on", func(t *testing.T) {
+		s.Search = true
+		p := s.Pages["index.md"]
+		b, err := s.wrapPage(p)
+		if err != nil {
+			t.Fatalf("wrapPage: %v", err)
+		}
+		check(t, "index.html with search on", p, string(b))
+	})
+}
+
+// Goes through WriteAssets rather than checkASCII alone: the vendored scripts hold
+// literal glyphs and have to stay outside the rule.
+func TestWriteAssetsRefusesNonASCIIScripts(t *testing.T) {
+	out := t.TempDir()
+	if err := WriteAssets(out); err != nil {
+		t.Fatalf("WriteAssets: %v", err)
+	}
+	for _, f := range []string{"_assets/site.js", "_assets/mermaid-viewer.js", "_assets/vendor/mermaid.min.js"} {
+		if !exists(out, f) {
+			t.Errorf("%s was not written", f)
+		}
+	}
+
+	if err := checkASCII("site.js", []byte("var s = '\u00e9';\nother = 1;\n")); err == nil {
+		t.Fatal("a literal glyph was accepted")
+	} else if !strings.Contains(err.Error(), "site.js:1:") {
+		t.Errorf("the error should name file and line, got %v", err)
+	}
+	if err := checkASCII("toc.js", []byte("ok\nvar s = '\u2014';\n")); err == nil ||
+		!strings.Contains(err.Error(), "toc.js:2:") {
+		t.Errorf("a glyph on the second line should report line 2, got %v", err)
 	}
 }
 

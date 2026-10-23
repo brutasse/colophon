@@ -1,0 +1,13 @@
+{
+  "name": "colophon-page-tests",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Tests for the page scripts in ../.., run against the built fixture site. Test-only: `go build` and `go test` read none of this.",
+  "scripts": {
+    "test": "node --test ."
+  },
+  "devDependencies": {
+    "jsdom": "^30.1.3"
+  }
+}

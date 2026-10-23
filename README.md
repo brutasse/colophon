@@ -364,7 +364,10 @@ docker buildx build --platform linux/amd64 --load -t colophon:local .
 ```
 
 `testdata/site` is a small corpus that uses every feature above, and
-`build_test.go` asserts on the rendered HTML. `testdata/broken` holds one
+`build_test.go` asserts on the rendered HTML — including which script each page
+loads. What a script does once loaded is asserted in JavaScript under `test/js`,
+against jsdom and this same built site, and no Go test reads a script's bytes or a
+stylesheet's rules. `testdata/broken` holds one
 problem per check rule, so a rule that stops firing fails a test. Three
 workflows run:
 
@@ -404,10 +407,22 @@ The Pagefind indexer is not vendored; colophon keeps
 `assets/PAGEFIND-LICENSE.txt` and writes it into the download cache beside the
 binary it describes.
 
-`assets/docs.css` and `assets/chroma.css` are part of this project. This
-repository commits the two vendored files, so `go build` needs no download
-step, and `go test` needs no network either: the indexer is fetched by
-`colophon build`, not by the toolchain.
+`assets/docs.css`, `assets/chroma.css`, and the page scripts `assets/site.js`,
+`assets/toc.js`, and `assets/mermaid-viewer.js` are part of this project, with no
+build step of their own: the templates reference them as `/_assets/<name>` and `go
+embed` carries them in the binary. Each script is tested in JavaScript under
+`test/js`:
+
+```sh
+npm ci --prefix test/js && npm --prefix test/js test
+```
+
+That install is test-only. This repository commits the two vendored files, so
+`go build` needs no download step and `go test` needs no network: the indexer is
+fetched by `colophon build`, not by the toolchain. The build does check one thing
+about a script, that its bytes are ASCII — a host serving a `.js` without a charset
+reads a literal glyph as mojibake, so the diagram controls spell their glyphs as
+`\u` escapes.
 
 ## Licence
 
