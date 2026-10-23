@@ -1,10 +1,12 @@
 package main
 
 import (
+	"math"
 	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -818,6 +820,183 @@ func TestWriteAssetsRefusesNonASCIIScripts(t *testing.T) {
 	if err := checkASCII("toc.js", []byte("ok\nvar s = '\u2014';\n")); err == nil ||
 		!strings.Contains(err.Error(), "toc.js:2:") {
 		t.Errorf("a glyph on the second line should report line 2, got %v", err)
+	}
+}
+
+// cssThemeBlock is one of the three theme blocks docs.css and chroma.css are
+// written in — the light defaults, the system preference, and the stored choice
+// that beats it — which is also the shape accentCSS writes for --accent.
+type cssThemeBlock struct {
+	which string
+	re    *regexp.Regexp
+}
+
+var cssThemeBlocks = []cssThemeBlock{
+	{"light", regexp.MustCompile(`(?s):root,\s*\[data-theme="light"\]\s*\{([^}]*)\}`)},
+	{"system dark", regexp.MustCompile(`(?s)@media \(prefers-color-scheme: dark\) \{\s*:root:not\(\[data-theme="light"\]\)\s*\{([^}]*)\}`)},
+	{"stored dark", regexp.MustCompile(`(?s)\[data-theme="dark"\]\s*\{([^}]*)\}`)},
+}
+
+var (
+	cssDeclRe       = regexp.MustCompile(`(--[a-z-]+):\s*([^;}]+)`)
+	cssVarRe        = regexp.MustCompile(`var\((--[a-z-]+)\)`)
+	cssHexRe        = regexp.MustCompile(`#[0-9a-fA-F]{3,8}\b`)
+	cssRGBARe       = regexp.MustCompile(`rgba\(\s*(\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)\s*\)`)
+	cssCommentRe    = regexp.MustCompile(`(?s)/\*.*?\*/`)
+	codeContrastMin = 4.5 // WCAG's AA bar for the .85rem text a code block holds
+)
+
+// embeddedAsset reads a file out of the binary's own asset tree, so a test asks
+// about the bytes that ship rather than about a copy of them on disk.
+func embeddedAsset(t *testing.T, name string) string {
+	t.Helper()
+	b, err := assetsFS.ReadFile("assets/" + name)
+	if err != nil {
+		t.Fatalf("read assets/%s: %v", name, err)
+	}
+	return string(b)
+}
+
+// themePalette reads one theme block of a stylesheet into the custom properties it
+// declares. One block per name is required: a second one would win in the cascade
+// while this test reads the first.
+func themePalette(t *testing.T, file string, b cssThemeBlock, css string) map[string]string {
+	t.Helper()
+	found := b.re.FindAllStringSubmatch(css, -1)
+	if len(found) != 1 {
+		t.Fatalf("assets/%s: %d %s theme blocks, want exactly 1", file, len(found), b.which)
+	}
+	decls := map[string]string{}
+	for _, d := range cssDeclRe.FindAllStringSubmatch(found[0][1], -1) {
+		decls[d[1]] = strings.TrimSpace(d[2])
+	}
+	if len(decls) == 0 {
+		t.Fatalf("assets/%s: the %s theme block declares no custom properties", file, b.which)
+	}
+	return decls
+}
+
+func paletteNames(p map[string]string) []string {
+	names := make([]string, 0, len(p))
+	for name := range p {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	return names
+}
+
+// cssRGB is a colour literal in a stylesheet: a hex colour, or an rgba() tint
+// composited over the surface it is painted on, which is how a diff token's
+// background arrives.
+func cssRGB(t *testing.T, value, surface string) [3]float64 {
+	t.Helper()
+	if hex := strings.TrimPrefix(value, "#"); hex != value {
+		if len(hex) == 3 {
+			hex = strings.Repeat(hex[0:1], 2) + strings.Repeat(hex[1:2], 2) + strings.Repeat(hex[2:], 2)
+		}
+		if len(hex) != 6 {
+			t.Fatalf("%q is not a colour this test can read", value)
+		}
+		var c [3]float64
+		for i := range c {
+			n, err := strconv.ParseUint(hex[2*i:2*i+2], 16, 8)
+			if err != nil {
+				t.Fatalf("%q is not a colour: %v", value, err)
+			}
+			c[i] = float64(n)
+		}
+		return c
+	}
+	m := cssRGBARe.FindStringSubmatch(value)
+	if m == nil {
+		t.Fatalf("%q is neither a hex colour nor an rgba() tint", value)
+	}
+	bg := cssRGB(t, surface, surface)
+	a, err := strconv.ParseFloat(m[4], 64)
+	if err != nil {
+		t.Fatalf("%q carries no alpha: %v", value, err)
+	}
+	var c [3]float64
+	for i := range c {
+		fg, err := strconv.ParseFloat(m[i+1], 64)
+		if err != nil {
+			t.Fatalf("%q: %v", value, err)
+		}
+		c[i] = fg*a + bg[i]*(1-a)
+	}
+	return c
+}
+
+func contrastRatio(a, b [3]float64) float64 {
+	lum := func(c [3]float64) float64 {
+		channel := func(v float64) float64 {
+			v /= 255
+			if v <= 0.03928 {
+				return v / 12.92
+			}
+			return math.Pow((v+0.055)/1.055, 2.4)
+		}
+		return 0.2126*channel(c[0]) + 0.7152*channel(c[1]) + 0.0722*channel(c[2])
+	}
+	la, lb := lum(a), lum(b)
+	if la < lb {
+		la, lb = lb, la
+	}
+	return (la + 0.05) / (lb + 0.05)
+}
+
+// The token palettes stay whole and readable: all three theme blocks declare the
+// same colours, a token rule carries a variable rather than a colour of its own,
+// and every token colour clears AA contrast against the surface it is drawn on.
+func TestChromaPalette(t *testing.T) {
+	chromaCSS, docsCSS := embeddedAsset(t, "chroma.css"), embeddedAsset(t, "docs.css")
+
+	tokens, surfaces, rules := map[string]map[string]string{}, map[string]string{}, chromaCSS
+	var names []string
+	for _, b := range cssThemeBlocks {
+		p := themePalette(t, "chroma.css", b, chromaCSS)
+		if names != nil && !slices.Equal(names, paletteNames(p)) {
+			t.Errorf("the %s theme block declares a different colour list: %v, want %v",
+				b.which, paletteNames(p), names)
+		}
+		names = paletteNames(p)
+		tokens[b.which] = p
+		surfaces[b.which] = themePalette(t, "docs.css", b, docsCSS)["--code-bg"]
+		rules = b.re.ReplaceAllString(rules, "")
+	}
+
+	rules = cssCommentRe.ReplaceAllString(rules, "")
+	for _, stray := range append(cssHexRe.FindAllString(rules, 1), cssRGBARe.FindAllString(rules, 1)...) {
+		t.Errorf("chroma.css colours a token outside its palettes: %s", stray)
+	}
+	for _, m := range cssVarRe.FindAllStringSubmatch(rules, -1) {
+		name := m[1]
+		if _, ok := tokens["light"][name]; ok {
+			continue
+		}
+		if !strings.Contains(docsCSS, name+":") {
+			t.Errorf("chroma.css uses %s, which no theme block defines", name)
+		}
+	}
+
+	for _, b := range cssThemeBlocks {
+		surface := surfaces[b.which]
+		if surface == "" {
+			t.Fatalf("docs.css defines no --code-bg for the %s theme", b.which)
+		}
+		for name, value := range tokens[b.which] {
+			if strings.HasSuffix(name, "-bg") {
+				continue // a surface, read under the text drawn on it
+			}
+			bg := surface
+			if tint, ok := tokens[b.which][name+"-bg"]; ok {
+				bg = tint
+			}
+			if r := contrastRatio(cssRGB(t, value, surface), cssRGB(t, bg, surface)); r < codeContrastMin {
+				t.Errorf("%s theme: %s %s on %s is %.2f:1, under %.1f:1",
+					b.which, name, value, bg, r, codeContrastMin)
+			}
+		}
 	}
 }
 

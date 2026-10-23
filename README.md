@@ -245,7 +245,8 @@ title:
 ```
 
 Everything else is plain GitHub Flavored Markdown. Colophon highlights a fenced
-code block that names a language, and turns a `mermaid` fence into a diagram.
+code block that names a language, and turns a `mermaid` fence into a diagram. A
+highlighted block takes GitHub's token colours for the theme the page is in.
 Colophon adds a copy control to the top-right corner of a highlighted block. The
 control copies the fence text as written, without the highlighting markup. A
 diagram renders fitted to the page width inside a scroll box, with a chip over it
