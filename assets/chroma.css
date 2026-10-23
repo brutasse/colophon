@@ -6,8 +6,8 @@
    A token rule names a variable and never a colour, so the two palettes cannot
    drift by one rule; TestChromaPalette checks every variable a rule uses is
    defined in all three blocks, and that each colour clears AA contrast on the
-   surface it is drawn on. Operators, output, and prompt text carry no rule at
-   all and take the block's own foreground, the way GitHub renders them. */
+   surface it is drawn on. Output and prompt text carry no rule at all and take
+   the block's own foreground, the way GitHub renders them. */
 
 :root,
 [data-theme="light"] {
@@ -50,12 +50,15 @@
 .chroma .k, .chroma .kc, .chroma .kd, .chroma .kn, .chroma .kp, .chroma .kr,
 .chroma .kt { color: var(--code-keyword) }
 
-.chroma .nc, .chroma .nd, .chroma .ne, .chroma .nf, .chroma .nl, .chroma .nn {
+/* .fm is a magic function (__init__) and .ni an entity reference (&amp;); both
+   are names to GitHub, so they take the entity colour the other names use. */
+.chroma .nc, .chroma .nd, .chroma .ne, .chroma .fm, .chroma .nf, .chroma .nl,
+.chroma .nn, .chroma .ni {
   color: var(--code-entity);
 }
 
 .chroma .na, .chroma .nb, .chroma .bp, .chroma .no, .chroma .nv, .chroma .vc,
-.chroma .vg, .chroma .vi { color: var(--code-variable) }
+.chroma .vg, .chroma .vi, .chroma .vm { color: var(--code-variable) }
 
 .chroma .nt { color: var(--code-tag) }
 
@@ -67,6 +70,11 @@
    string it sits inside. */
 .chroma .m, .chroma .mb, .chroma .mf, .chroma .mh, .chroma .mi, .chroma .il,
 .chroma .mo, .chroma .se { color: var(--code-constant) }
+
+/* GitHub draws operators in the constant blue, not in the text colour: .o is
+   punctuation that computes (:=, +), .ow a word operator (and, not), .or a
+   reserved one. */
+.chroma .o, .chroma .ow, .chroma .or { color: var(--code-constant) }
 
 .chroma .c, .chroma .ch, .chroma .cm, .chroma .c1, .chroma .cs, .chroma .cp,
 .chroma .cpf { color: var(--code-comment); font-style: italic }
@@ -83,5 +91,6 @@
 .chroma .gs { font-weight: 600 }
 .chroma .gl { text-decoration: underline }
 
-/* A stray space takes the rule colour, so it stays a mark and not a glyph. */
+/* Every space and newline carries .w from chroma v2.27 on, so this may set a
+   colour and never a background: a tint here would paint all whitespace. */
 .chroma .w { color: var(--line) }
