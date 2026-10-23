@@ -296,6 +296,7 @@ func TestBrokenSiteProblems(t *testing.T) {
 		"link to this site; use a relative .md path (./one.md)",
 		"orphan page: no nav: list contains it",
 		"undeclared fragment: an include comment in one.md inlines this file",
+		"link with no text [](one.md)",
 	} {
 		if !strings.Contains(joined, wantMsg) {
 			t.Errorf("problems missing %q, got:\n%s", wantMsg, joined)
@@ -304,9 +305,9 @@ func TestBrokenSiteProblems(t *testing.T) {
 	// orphan.md is the unreachable page and inlined.md is the fragment the
 	// source forgot to declare. one.md and two.md are unlisted too, but the home
 	// page links them from prose, which keeps them reachable and out of the
-	// report.
-	if len(errs) != 7 {
-		t.Errorf("got %d problems, want 7:\n%s", len(errs), joined)
+	// report. The last home-page bullet is the link with no text.
+	if len(errs) != 8 {
+		t.Errorf("got %d problems, want 8:\n%s", len(errs), joined)
 	}
 
 	// Math is detected, never declared: two.md carries the flag that ships
@@ -589,6 +590,56 @@ func TestNavAnchorRule(t *testing.T) {
 		if strings.Contains(joined, silent) {
 			t.Errorf("%q was reported, but only a nav list item is a problem:\n%s", silent, joined)
 		}
+	}
+}
+
+// A link with no text renders an empty spot where the reader should have found one,
+// so it is reported wherever it was written. A gated subtree keeps the problem
+// informational rather than silent: nobody reads an empty link, and a file owned
+// upstream is still not this site's to rewrite.
+func TestEmptyLinkTextRule(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "source")
+	pages := map[string]string{
+		"index.md": "# Home\n\nSee [the page](page.md) and the [gated notes](gated/index.md).\n",
+		"page.md": "# Page\n\nAn empty link, which is the report: [](page.md#second-thing).\n\n" +
+			"Quiet here: an image asks for no alt text, so ![](_static/pic.png) stays as it is, " +
+			"[a link with text](page.md#second-thing) is the form wanted, `[](page.md#second-thing)` " +
+			"is code the reader reads rather than a link to follow, and " +
+			"`<a name=...>` is the custom anchor an author writes on purpose:\n\n" +
+			"<a name=\"somewhere\"></a>\n\n```\n[](page.md#second-thing)\n```\n\n## Second thing\n\nProse.\n",
+		"gated/index.md":  "# Gated notes\n\nUpstream wrote [](../page.md).\n",
+		"_static/pic.png": "not really a png, and nothing reads it",
+	}
+	for rel, body := range pages {
+		p := filepath.Join(src, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	conf := "source: source\ntags: gated=gated\n"
+	if err := os.WriteFile(filepath.Join(dir, "colophon.conf"), []byte(conf), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s, err := NewSite(filepath.Join(dir, "colophon.conf"), "gated")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.BuildAll(); err != nil {
+		t.Fatal(err)
+	}
+	errs, info, _ := s.collectLinkProblems()
+	if len(errs) != 1 || len(info) != 1 {
+		t.Fatalf("got errs=%v info=%v", errs, info)
+	}
+	if !strings.Contains(errs[0], "page.md: link with no text [](page.md#second-thing)") {
+		t.Errorf("the empty link in prose was not reported:\n%v", errs)
+	}
+	if !strings.Contains(info[0], "gated/index.md: link with no text [](../page.md)") {
+		t.Errorf("the empty link in the gated subtree is not the one informational problem:\n%v", info)
 	}
 }
 

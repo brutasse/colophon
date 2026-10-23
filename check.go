@@ -21,6 +21,14 @@ var (
 	rawAttrRe = regexp.MustCompile(`(?:href|src)="([^"]+)"`)
 	urlBareRe = regexp.MustCompile(`(https?://[^\s)<>"']+)`)
 	fenceRe   = regexp.MustCompile(`^\s*(` + "`" + `{3,}|~{3,})`)
+	// a link whose brackets hold no text, which renders as an element with
+	// nothing to read or click; an image's empty alt text shares the syntax and
+	// is the one the scan has to skip
+	emptyLinkTextRe = regexp.MustCompile(`\[\]\(([^)\s][^)]*)\)`)
+	// one single-backtick code span on one line; a span written with a longer
+	// backtick run is not matched, which leaves that rare form code to the reader
+	// and markup to the scan
+	inlineCodeRe = regexp.MustCompile("`[^`\\n]+`")
 	// a list item that is exactly one link to a section of a page, which reads to
 	// its author like a nav entry and to colophon like prose
 	navAnchorItemRe = regexp.MustCompile(`(?m)^[ \t]*[-*][ \t]+\[[^\]]*\]\([^)\s]+\.md#([^)\s]+)\)[ \t]*$`)
@@ -217,6 +225,21 @@ func inSpan(spans [][2]int, pos int) bool {
 	return false
 }
 
+// codeSpans is fenceSpans plus the inline code spans of each line. The link-text
+// scan needs both: a page that teaches the link dialect writes the form it warns
+// about inside backticks, and there it is prose about markup rather than markup.
+func codeSpans(raw []byte) [][2]int {
+	spans := fenceSpans(raw)
+	off := 0
+	for _, line := range bytes.Split(raw, []byte("\n")) {
+		for _, m := range inlineCodeRe.FindAllIndex(line, -1) {
+			spans = append(spans, [2]int{off + m[0], off + m[1]})
+		}
+		off += len(line) + 1
+	}
+	return spans
+}
+
 // pageProblems checks every internal link on a wrapped page. It returns
 // hard errors plus "rewrite hints": for a missing anchor whose fragment
 // matches a real one once hyphen runs are collapsed on both sides, the
@@ -225,6 +248,7 @@ func inSpan(spans [][2]int, pos int) bool {
 // only by those runs.
 func (s *Site) pageProblems(p *Page, byOut map[string]*Page) (errs, hints []string) {
 	errs = append(errs, s.styleProblems(p, byOut)...)
+	errs = append(errs, emptyLinkProblems(p)...)
 	page, err := s.wrapPage(p)
 	if err != nil {
 		return append(errs, p.Rel+": wrap: "+err.Error()), nil
@@ -260,6 +284,25 @@ func (s *Site) pageProblems(p *Page, byOut map[string]*Page) (errs, hints []stri
 		errs = append(errs, fmt.Sprintf("%s: missing anchor %s", p.Rel, href))
 	}
 	return errs, hints
+}
+
+// emptyLinkProblems reports a markdown link written with no text. GFM renders it
+// as an <a> with nothing inside, so the reader sees prose run together where a
+// link was meant. In a `nav: list` page the empty form also keeps its list out of
+// the nav, because navRun's item pattern needs text between the brackets, so
+// filling one in moves the nav tree. Unlike the link-portability rules this one is
+// reported for an upstream tree as well: an empty link is a defect wherever it
+// comes from, and collectLinkProblems files it under informational there.
+func emptyLinkProblems(p *Page) (errs []string) {
+	spans := codeSpans(p.Src)
+	for _, m := range emptyLinkTextRe.FindAllSubmatchIndex(p.Src, -1) {
+		if inSpan(spans, m[0]) || (m[0] > 0 && p.Src[m[0]-1] == '!') {
+			continue
+		}
+		errs = append(errs, fmt.Sprintf("%s: link with no text %s: the page renders nothing to click, so write the target page's title between the brackets",
+			p.Rel, string(p.Src[m[0]:m[1]])))
+	}
+	return errs
 }
 
 // dashCollapseHint names the fragment on target that a collapsed fragment was

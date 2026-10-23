@@ -8,6 +8,7 @@ Deliberately broken links, which `build --check` must report:
 * [Missing anchor](one.md#nope)
 * [Root-absolute page link](/one.md)
 * [Absolute link to this site](https://docs.example.test/one.html)
+* [](one.md)
 
 The math on [the other page](two.md) ships MathJax with no declaration.
 

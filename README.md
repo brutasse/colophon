@@ -19,7 +19,8 @@ cached the indexer, the whole build works offline.
 - Builds navigation from the `nav: list` pages, then derives breadcrumbs, the
   sidebar, and prev/next links from that one tree.
 - Gates the build on a link check: broken links, dead anchors, unreachable
-  pages, and link forms that break GitHub navigation all fail `build --check`.
+  pages, a link with no text, and link forms that break GitHub navigation all
+  fail `build --check`.
 - Ships the search index: Pagefind runs after the render, so search works on a
   static site with no backend.
 - Installs as one binary on Linux, macOS, and Windows, verifies each download
