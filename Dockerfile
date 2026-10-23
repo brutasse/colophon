@@ -7,7 +7,7 @@
 # extracts files.
 
 ARG GO_VERSION=1.27
-ARG ALPINE_VERSION=3.22
+ARG ALPINE_VERSION=3.24
 ARG PAGEFIND_SOURCE=https://github.com/Pagefind/pagefind/releases/download
 
 # ---------------------------------------------------------------- build
