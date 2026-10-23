@@ -643,6 +643,157 @@ func TestEmptyLinkTextRule(t *testing.T) {
 	}
 }
 
+// A file the corpus does not hold is a hole in the page no rule looked at: the image
+// renders nothing and the download opens nothing, and only the reader finds out. So
+// every link to a file colophon cannot serve is a report, including one whose path
+// leads above the source directory, which resolves on the author's disk and reaches
+// no reader because copyStatics copies the corpus and nothing beside it. A gated
+// subtree's missing file stays informational, as for every other rule.
+func TestMissingFileRule(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "source")
+	pages := map[string]string{
+		"index.md": "# Home\n\nSee [the page](page.md) and the [gated notes](gated/index.md).\n",
+		"page.md": "# Page\n\n" +
+			"A missing image is the report: ![nope](_static/nope.png).\n\n" +
+			"So is a missing download, and a query on it is no reason to look away: [the bundle](_static/bundle.zip?v=2).\n\n" +
+			"And so is markup written by hand: <img src=\"_static/raw-nope.png\">\n\n" +
+			"One leading out of the corpus is dead however it resolves on disk: ![out](../outside.png)\n\n" +
+			"Quiet, in order: ![here](_static/ok.png?v=2) and [the tools](_static/tools.tar.gz) are in the " +
+			"corpus, and so is ![the spaced one](<_static/a b.png>), which the page asks for by its encoded " +
+			"name. ![another host](https://example.com/absent.png) is not ours to check, " +
+			"[the stylesheet](/_assets/docs.css) is a file colophon writes itself, " +
+			"[write](mailto:docs@example.com) names no file, and `![written](_static/code-nope.png)` is " +
+			"markup a reader reads rather than an image to load:\n\n" +
+			"```html\n<img src=\"_static/fence-nope.png\">\n```\n",
+		"gated/index.md":       "# Gated notes\n\nUpstream asks for what is not there: ![gone](../_static/gated-nope.png).\n",
+		"_static/ok.png":       "not really a png, and nothing reads it",
+		"_static/a b.png":      "the same, with a space in its name",
+		"_static/tools.tar.gz": "not really a tarball",
+	}
+	for rel, body := range pages {
+		p := filepath.Join(src, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(dir, "colophon.conf"), []byte("source: source\ntags: gated=gated\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s, err := NewSite(filepath.Join(dir, "colophon.conf"), "gated")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.BuildAll(); err != nil {
+		t.Fatal(err)
+	}
+	errs, info, _ := s.collectLinkProblems()
+	if len(errs) != 4 || len(info) != 1 {
+		t.Fatalf("got errs=%v info=%v", errs, info)
+	}
+	for _, want := range []string{
+		"page.md: missing file _static/nope.png",
+		"page.md: missing file _static/bundle.zip?v=2",
+		"page.md: missing file _static/raw-nope.png",
+		"page.md: file above the source directory ../outside.png",
+	} {
+		found := false
+		for _, e := range errs {
+			if strings.Contains(e, want) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("%q was not reported:\n%v", want, errs)
+		}
+	}
+	if !strings.Contains(info[0], "gated/index.md: missing file ../_static/gated-nope.png") {
+		t.Errorf("the gated subtree's missing file is not the one informational problem:\n%v", info)
+	}
+	for _, silent := range []string{"code-nope.png", "fence-nope.png", "example.com", "_assets/docs.css", "mailto:", "tools.tar.gz"} {
+		for _, e := range append(errs, info...) {
+			if strings.Contains(e, silent) {
+				t.Errorf("%q was reported, but the corpus or another host answers for it:\n%s", silent, e)
+			}
+		}
+	}
+}
+
+// The dev server re-wraps the whole site for what a save can move in a second page's
+// HTML: the title the sidebar and the breadcrumbs show, the children a `nav: list`
+// declares, the top-level sections that become rows under the page, and the `#all`
+// marker deciding which of a child's headings are documents. Everything else a save
+// changes reaches that page's own bytes alone, so naming the difference is what lets
+// a save of a 1300-page corpus rebuild one page.
+func TestNavMovedNamesWhatRebuildsEverything(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "source")
+	const (
+		indexSrc = "---\nnav: list\n---\n\n# Home\n\n- [Page](page.md)\n"
+		pageSrc  = "---\ntitle: The page\n---\n\n# The page\n\nRead me.\n\n## Detail\n\nMore.\n"
+		plainSrc = "# Plain\n\nProse.\n"
+	)
+	for rel, body := range map[string]string{"index.md": indexSrc, "page.md": pageSrc, "plain.md": plainSrc, "dup.md": "# Plain\n\nSame heading text as plain.md, so the two pages compete for a slug.\n"} {
+		p := filepath.Join(src, rel)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(dir, "colophon.conf"), []byte("source: source\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s, err := NewSite(filepath.Join(dir, "colophon.conf"), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.BuildAll(); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		what, rel, body, want string
+	}{
+		{"the same bytes again", "page.md", pageSrc, ""},
+		{"only its prose", "page.md", strings.Replace(pageSrc, "Read me.", "Read me now, all of it.", 1), ""},
+		{"a heading of its own rail", "page.md", strings.Replace(pageSrc, "## Detail", "## Detail, renamed", 1), ""},
+		{"its front-matter title", "page.md", strings.Replace(pageSrc, "title: The page", "title: The page, retitled", 1), "a page title moved"},
+		{"the heading another page's title came from", "plain.md", strings.Replace(plainSrc, "# Plain", "# Plain, retitled", 1), "a page title moved"},
+		{"a new top-level section", "page.md", pageSrc + "\n# Another document\n\nText.\n", "the page sections moved"},
+		{"the section a front-matter title hides", "page.md", strings.Replace(pageSrc, "# The page", "# The page, rewritten", 1), "the page sections moved"},
+		{"a child added to its list", "index.md", indexSrc + "- [New page](new.md)\n", "a nav list moved"},
+		{"the #all marker", "index.md", strings.Replace(indexSrc, "](page.md)", "](page.md#all)", 1), "a #all marker moved"},
+	} {
+		if why := navMoved(s.Pages[tc.rel], s.renderPage(tc.rel, tc.body)); why != tc.want {
+			t.Errorf("saving %s as %q: navMoved() = %q, want %q (%s)", tc.rel, tc.body, why, tc.want, tc.what)
+		}
+	}
+	if why := navMoved(nil, s.renderPage("new.md", "# New\n")); why == "" {
+		t.Error("a page joining the build moves nothing, but every sidebar could gain it")
+	}
+	if why := navMoved(s.Pages["page.md"], nil); why == "" {
+		t.Error("a page leaving the build moves nothing, but its row is in every sidebar showing it")
+	}
+	// The narrow rule is only safe if rendering a page twice gives the same page
+	// back. BuildAll renders every page through one shared goldmark instance and in
+	// parallel, so heading ids carrying state across documents would make the page
+	// differ from its own bytes and every save of it a nav move.
+	for rel, p := range s.Pages {
+		raw, err := os.ReadFile(filepath.Join(s.Src, filepath.FromSlash(rel)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if why := navMoved(p, s.renderPage(rel, string(raw))); why != "" {
+			t.Errorf("saving %s with its own bytes: navMoved() = %q, want the save to move nothing", rel, why)
+		}
+	}
+}
+
 // The dev reload channel is a WebSocket, not a stream; serve.go's Serve comment holds
 // why.
 func TestDevReloadUsesWebSocket(t *testing.T) {

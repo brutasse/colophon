@@ -46,20 +46,22 @@ func (s *Site) Serve(addr string) error {
 		mu.Unlock()
 		return nil
 	}
-	rebuildPage := func(rel string) error {
-		old, ok := s.Pages[rel]
+	// loadPage reads and renders one source file, or returns no page for one that is
+	// gone. A file that exists and will not read is an error to report, not a page to
+	// drop.
+	loadPage := func(rel string) (*Page, error) {
 		raw, err := os.ReadFile(filepath.Join(s.Src, filepath.FromSlash(rel)))
-		if err != nil {
-			if ok {
-				delete(s.Pages, rel)
-				mu.Lock()
-				delete(rendered, "/"+old.OutPath)
-				mu.Unlock()
-			}
-			return nil
+		if os.IsNotExist(err) {
+			return nil, nil
 		}
-		p := s.renderPage(rel, string(raw))
-		s.Pages[rel] = p
+		if err != nil {
+			return nil, err
+		}
+		return s.renderPage(rel, string(raw)), nil
+	}
+	// publish puts a rendered page where the handler and the next wrap read it.
+	publish := func(p *Page) error {
+		s.Pages[p.Rel] = p
 		s.finalize(p) // sets p.Body; wrapPage renders from it
 		b, err := s.wrapPage(p)
 		if err != nil {
@@ -69,6 +71,22 @@ func (s *Site) Serve(addr string) error {
 		rendered["/"+p.OutPath] = b
 		mu.Unlock()
 		return nil
+	}
+	rebuildPage := func(rel string) error {
+		p, err := loadPage(rel)
+		if err != nil {
+			return err
+		}
+		if p == nil {
+			if old, ok := s.Pages[rel]; ok {
+				delete(s.Pages, rel)
+				mu.Lock()
+				delete(rendered, "/"+old.OutPath)
+				mu.Unlock()
+			}
+			return nil
+		}
+		return publish(p)
 	}
 	s.Search = true // optimistic; the first index result re-wraps without it on failure
 	if err := rebuild(); err != nil {
@@ -327,12 +345,15 @@ func (s *Site) Serve(addr string) error {
 				targets := s.changedPaths(changed)
 				start := time.Now()
 				full := false
+				why := "" // what the save moved that a second page's HTML is built from
+				// Pages this decision rendered on its way to that answer, kept to
+				// publish as they are when nothing but their own bytes changed.
+				loaded := map[string]*Page{}
 				for rel := range changed {
-					_, known := s.Pages[rel]
 					// A file that changed its `fragment:` verdict changes which
 					// files are pages at all, so only a full rebuild is right.
 					if was := s.forgetFragment(rel); was != s.isFragment(rel) {
-						full = true
+						full, why = true, "a `fragment:` declaration moved"
 						break
 					}
 					// A logo or favicon is named in every page header, at a URL derived
@@ -341,14 +362,28 @@ func (s *Site) Serve(addr string) error {
 						if err := s.hashedStatics(); err != nil {
 							fmt.Fprintln(os.Stderr, "rebuild:", err)
 						}
+						full, why = true, "the logo or favicon moved"
+						break
+					}
+					// An inlined fragment's headings become the host page's, and a host
+					// page parents its sections in the nav.
+					if s.includeReferrer(rel) != nil {
+						full, why = true, "an inlined fragment moved"
+						break
+					}
+					if s.excluded(rel) {
+						continue // gated out of this build, so there is nothing to publish
+					}
+					next, err := loadPage(rel)
+					if err != nil {
+						fmt.Fprintln(os.Stderr, "rebuild:", err)
+						continue
+					}
+					if why = navMoved(s.Pages[rel], next); why != "" {
 						full = true
 						break
 					}
-					if strings.HasSuffix(rel, "index.md") || s.includeReferrer(rel) != nil ||
-						s.navDeclared(rel) || (!known && !s.excluded(rel)) {
-						full = true
-						break
-					}
+					loaded[rel] = next
 				}
 				if full {
 					if err := s.BuildAll(); err != nil {
@@ -362,11 +397,8 @@ func (s *Site) Serve(addr string) error {
 					// reachability the author most wants told.
 					s.checkChanged(changed)
 				} else {
-					for rel := range changed {
-						if s.excluded(rel) {
-							continue
-						}
-						if err := rebuildPage(rel); err != nil {
+					for _, p := range loaded {
+						if err := publish(p); err != nil {
 							fmt.Fprintln(os.Stderr, "rebuild:", err)
 						}
 					}
@@ -378,6 +410,9 @@ func (s *Site) Serve(addr string) error {
 					s.checkChanged(changed)
 				}
 				what := "all"
+				if why != "" {
+					what += " (" + why + ")"
+				}
 				if !full {
 					names := make([]string, 0, len(changed))
 					for r := range changed {

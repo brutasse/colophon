@@ -43,11 +43,12 @@ func main() {
 		Long: "build renders every page to --out and then reports link problems as\n" +
 			"warnings without failing (exit 0).\n\n" +
 			"--check turns the report into a gate and exits 1 on: broken links, missing\n" +
-			"anchors, non-portable link forms (.html, root-absolute, extensionless\n" +
-			"page links), pages no reader can reach because nothing links to them and no\n" +
-			"`nav: list` contains them, a fragment whose `fragment: true` declaration is\n" +
-			"missing, and `nav: list` items that link to a section of a page instead of\n" +
-			"the page.\n\n" +
+			"anchors, links to files the source tree does not hold (images, downloads,\n" +
+			"and any path leading above it), non-portable link forms (.html,\n" +
+			"root-absolute, extensionless page links), pages no reader can reach because\n" +
+			"nothing links to them and no `nav: list` contains them, a fragment whose\n" +
+			"`fragment: true` declaration is missing, and `nav: list` items that link to a\n" +
+			"section of a page instead of the page.\n\n" +
 			"Problems in a tag-gated subtree are always informational: those trees\n" +
 			"are copied verbatim from upstream repositories and must be fixed there.",
 		Args: cobra.NoArgs,

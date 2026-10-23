@@ -15,7 +15,8 @@ import (
 var (
 	hrefRe    = regexp.MustCompile(`href="([^"]*)"`)
 	dashRunRe = regexp.MustCompile(`-{2,}`)
-	// source-level scans for the link-portability contract
+	// source-level scans for the link-portability contract; assetProblems also reads
+	// rawAttrRe off a rendered body, for the file-existence rule
 	mdDestRe  = regexp.MustCompile(`\]\(([^)\s]+)(?:\s+"[^"]*")?\)`)
 	refDefRe  = regexp.MustCompile(`(?m)^\s{0,3}\[[^\]]+\]:\s*(\S+)`)
 	rawAttrRe = regexp.MustCompile(`(?:href|src)="([^"]+)"`)
@@ -240,6 +241,30 @@ func codeSpans(raw []byte) [][2]int {
 	return spans
 }
 
+// assetProblems reports a body href or src naming a file this build will not have —
+// an image that renders nothing, a download that opens nothing. The scan reads the
+// rendered body rather than the markdown, so a page that documents the link dialect
+// stays quiet: the renderer writes the quotes inside code as `&#34;`, so no example
+// offers the literal `src="` this reads, and a `data:` image has lost its src to the
+// sanitizer.
+func (s *Site) assetProblems(p *Page) (errs []string) {
+	seen := map[string]bool{}
+	for _, m := range rawAttrRe.FindAllStringSubmatch(string(p.Raw), -1) {
+		rel, ok := s.localFile(p.Rel, m[1])
+		if !ok || seen[rel] {
+			continue
+		}
+		seen[rel] = true
+		switch {
+		case strings.HasPrefix(rel, ".."):
+			errs = append(errs, fmt.Sprintf("%s: file above the source directory %s: only the source tree is copied into the build, so that path serves nothing however it resolves on disk", p.Rel, m[1]))
+		case !fileExists(s.Src, rel):
+			errs = append(errs, fmt.Sprintf("%s: missing file %s: nothing at that path under the source directory, so the build has nothing to serve there", p.Rel, m[1]))
+		}
+	}
+	return errs
+}
+
 // pageProblems checks every internal link on a wrapped page. It returns
 // hard errors plus "rewrite hints": for a missing anchor whose fragment
 // matches a real one once hyphen runs are collapsed on both sides, the
@@ -249,6 +274,7 @@ func codeSpans(raw []byte) [][2]int {
 func (s *Site) pageProblems(p *Page, byOut map[string]*Page) (errs, hints []string) {
 	errs = append(errs, s.styleProblems(p, byOut)...)
 	errs = append(errs, emptyLinkProblems(p)...)
+	errs = append(errs, s.assetProblems(p)...)
 	page, err := s.wrapPage(p)
 	if err != nil {
 		return append(errs, p.Rel+": wrap: "+err.Error()), nil
@@ -501,6 +527,40 @@ func (s *Site) gatedDirs() string {
 	return strings.Join(dirs, ",")
 }
 
+// localFile maps one rendered body href or src to a file in the source tree, which
+// is the file copyStatics hands to the host. ok=false means no verdict is owed for
+// it: an external or other-scheme URL, a bare #fragment, a path served out of the
+// output tree rather than the corpus, or a page reference — anything ending in
+// `.html` or carrying no extension, which is how resolveHref reads a page, and
+// whether or not such a target exists is the broken-link loop's to report.
+func (s *Site) localFile(fromRel, href string) (string, bool) {
+	if href == "" || strings.HasPrefix(href, "#") || strings.HasPrefix(href, "//") {
+		return "", false
+	}
+	// u.Path is percent-decoded with the ?query and #fragment off it, so
+	// `_static/a%20b.png` and `bundle.zip?v=2` reach the filesystem as the file they
+	// name rather than as a name no file answers to.
+	u, err := url.Parse(href)
+	if err != nil || u.Scheme != "" || u.Path == "" {
+		return "", false
+	}
+	dest := strings.TrimPrefix(u.Path, "/")
+	// Both of these are written into the output tree, so nothing in the corpus can
+	// back them: _assets holds what the binary embeds plus the config's logo and
+	// favicon, and the indexer fills pagefind/ after the render.
+	if dest == assetDir || strings.HasPrefix(dest, assetDir+"/") || strings.HasPrefix(dest, "pagefind/") {
+		return "", false
+	}
+	rel := dest
+	if !strings.HasPrefix(u.Path, "/") {
+		rel = path.Join(path.Dir(fromRel), dest)
+	}
+	if strings.HasSuffix(rel, ".html") || !strings.Contains(path.Base(rel), ".") {
+		return "", false
+	}
+	return path.Clean(rel), true
+}
+
 // resolveHref classifies an href. ok=false means "not a site-internal page
 // reference" (external URL, asset, bare anchor is checked separately).
 func (s *Site) resolveHref(fromRel, href string, byOut map[string]*Page) (*Page, string, bool) {
@@ -554,6 +614,7 @@ func (s *Site) resolveHref(fromRel, href string, byOut map[string]*Page) (*Page,
 		}
 		return nil, frag, true
 	}
-	// non-page file targets (_static, pdfs...) — existence not checked here
+	// non-page file targets (_static, pdfs...): assetProblems asks whether the file
+	// is in the source tree
 	return nil, "", false
 }

@@ -5,10 +5,12 @@ import (
 	"html"
 	"html/template"
 	"io"
+	"maps"
 	"os"
 	"path"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -92,6 +94,46 @@ func (s *Site) buildNav() {
 			s.next[p.Rel] = s.flat[i+1]
 		}
 	}
+}
+
+// navMoved names what a save changed in next about the page old that a second
+// page's HTML is built from, or "" when the save reaches only that page's own
+// bytes. buildNav reads a page's `nav: list` items as its children and gives it a
+// sidebar row per top-level section, the sidebar and the breadcrumbs show its
+// title, and an item's `#all` marker decides which of a child's headings are
+// documents. Every other field a save can move shows up in that page alone. A nil
+// old means the page joined this build and a nil next that it left, either of which
+// every sidebar could change.
+func navMoved(old, next *Page) string {
+	switch {
+	case old == nil:
+		return "a page joined the build"
+	case next == nil:
+		return "a page left the build"
+	case old.Title != next.Title:
+		return "a page title moved"
+	case !slices.Equal(old.NavChildren, next.NavChildren):
+		return "a nav list moved"
+	case !maps.Equal(old.NavAll, next.NavAll):
+		return "a #all marker moved"
+	case !slices.Equal(sectionHeadings(old), sectionHeadings(next)):
+		return "the page sections moved"
+	}
+	return ""
+}
+
+// sectionHeadings is every level-1 heading of a page, id and text, which covers
+// both the sections the page parents (sectionChildren) and the ones its `#all`
+// item lists (everySection): of two pages sharing a front-matter title, the one
+// difference `#all` can list is the heading the page took its title from.
+func sectionHeadings(p *Page) []string {
+	var out []string
+	for _, hd := range p.Headings {
+		if hd.Level == 1 {
+			out = append(out, hd.ID+" "+hd.Text)
+		}
+	}
+	return out
 }
 
 // renderSidebar shows the root sections; the active section's subtree is

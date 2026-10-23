@@ -529,17 +529,6 @@ func (p *Page) everySection() []heading {
 	return out
 }
 
-// navDeclared reports whether a change to a known page can move the nav tree, in
-// which case only a full rebuild is right: the page declares children in a list,
-// or holds sections that are children of it.
-func (s *Site) navDeclared(rel string) bool {
-	p, ok := s.Pages[rel]
-	if !ok {
-		return false
-	}
-	return p.Meta["nav"] == "list" || len(p.sectionChildren()) > 0
-}
-
 // finalize puts the page body in its final form: the sub-sections a nav list
 // gains from its children, then the page TOC when `toc:` asks for one.
 // wrapPage then puts the body in the site template.

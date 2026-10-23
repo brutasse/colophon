@@ -18,9 +18,9 @@ cached the indexer, the whole build works offline.
   and math need no special syntax.
 - Builds navigation from the `nav: list` pages, then derives breadcrumbs, the
   sidebar, and prev/next links from that one tree.
-- Gates the build on a link check: broken links, dead anchors, unreachable
-  pages, a link with no text, and link forms that break GitHub navigation all
-  fail `build --check`.
+- Gates the build on a link check: broken links, dead anchors, an image or
+  download no file in the corpus backs, unreachable pages, a link with no text,
+  and link forms that break GitHub navigation all fail `build --check`.
 - Ships the search index: Pagefind runs after the render, so search works on a
   static site with no backend.
 - Installs as one binary on Linux, macOS, and Windows, verifies each download
@@ -273,6 +273,9 @@ exits 0: a broken link should not stop you from reading the site.
 
 - a link to a page that no build produces,
 - a link to an anchor that the target page does not define,
+- an image, download, or embedded document whose file the corpus does not hold,
+  or whose path leads above the source directory: only the source tree is copied
+  into the build, so either way the site has nothing to serve there,
 - a page link that uses `.html`, a root-absolute path, or no extension,
 - an absolute link to this same site,
 - a page that no `nav: list` contains and that no other page links to,
@@ -375,7 +378,10 @@ bundle, as uncacheable. Nothing a rebuild can change survives a reload.
 
 - a page rebuild takes milliseconds, and the browser reloads over a WebSocket
   that only pings the tabs whose page changed,
-- a fragment change or a navigation change rebuilds the whole site,
+- the whole site is re-wrapped only for what a second page's HTML is built from: a
+  page title, a `nav: list`, a top-level section, a `fragment:` declaration, the logo
+  or favicon, or a page joining or leaving the build. The line that says so names
+  which, and a save that only rewrites prose rebuilds its own page,
 - the checker reports the problems of each saved file on the terminal,
 - Pagefind indexes a mirror of the pages in the background, so a reload never
   waits on search.
