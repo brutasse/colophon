@@ -165,9 +165,21 @@ document.addEventListener("keydown",function(e){if(e.key==="Escape")open(false);
 var rail=document.querySelector(".toc");if(!rail)return;
 var main=document.querySelector("main"),links=[].slice.call(rail.querySelectorAll("a")),
 heads=links.map(function(a){return document.getElementById(decodeURIComponent(a.hash.slice(1)));});
+// The rail is capped at the viewport height and scrolls on its own, so a page with more
+// headings than the screen leaves the highlighted link sitting below its fold. Keep five
+// links of lead under the highlight, and five above for a reader scrolling back up, so
+// the section coming next is named before it is reached. docs.css animates the move.
+function keep(i){var n=links.length,rr=rail.getBoundingClientRect(),off=rail.scrollTop-rr.top,
+low=links[Math.min(i+5,n-1)].getBoundingClientRect().bottom,
+up=links[Math.max(i-5,0)].getBoundingClientRect().top,el=links[i].getBoundingClientRect(),
+lo=off+low-rail.clientHeight,hi=off+up;
+// five above and five below do not always fit in the rail together: then clear the highlight
+if(lo>hi){lo=off+el.bottom-rail.clientHeight+12;hi=off+el.top-12;}
+if(rail.scrollTop<lo)rail.scrollTop=lo;else if(rail.scrollTop>hi)rail.scrollTop=hi;}
 function sync(){var top=main.getBoundingClientRect().top,act=-1;
 for(var i=0;i<heads.length;i++){if(heads[i]&&heads[i].getBoundingClientRect().top-top<=64)act=i;}
-links.forEach(function(l,i){l.classList.toggle("active",i===act);});}
+links.forEach(function(l,i){l.classList.toggle("active",i===act);});
+if(act>=0)keep(act);}
 main.addEventListener("scroll",sync,{passive:true});sync();})();</script>{{end}}
 </body>
 </html>

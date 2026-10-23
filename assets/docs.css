@@ -208,7 +208,14 @@ body.mm-fullscreen { overflow: hidden; }
     position: sticky; top: 2.9rem; float: right;
     margin: 3.2rem 0 1rem 2rem; padding-left: .9rem; border-left: 1px solid var(--line);
     max-height: calc(100vh - 4rem); overflow-y: auto;
+    /* the scroll-spy scrolls this box to the heading it highlights, and a jump of a
+       few list rows reads as a glitch without the animation */
+    scroll-behavior: smooth;
   }
   /* the rail only appears once the pane can hold article + gutter + rail */
   @container (min-width: 70rem) { .toc { display: block; } }
 }
+
+/* after the rule above, which would otherwise win on order: the rail's follow is a
+   programmatic scroll, so a reader asking for no motion gets an instant one */
+@media (prefers-reduced-motion: reduce) { .toc { scroll-behavior: auto; } }

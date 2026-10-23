@@ -166,6 +166,15 @@ func TestBuildClean(t *testing.T) {
 	// the title, so look at the rail only.
 	rail := sliceBetween(t, "guide/index.html", guide, `<nav class="toc"`, "</nav>")
 	wantNot(t, "guide/index.html rail", rail, `href="#guide"`)
+	// The rail is capped at the viewport height, so its scroll-spy has to move the rail to
+	// the heading it highlights and keep part of the list in sight around it; without that
+	// the highlight lands out of view on a page with more headings than the screen.
+	spy := sliceBetween(t, "guide/index.html", guide, `var rail=document.querySelector(".toc")`, "</script>")
+	want(t, "guide/index.html scroll-spy", spy,
+		"if(act>=0)keep(act);",
+		"links[Math.min(i+5,n-1)]", // lead below the highlight,
+		"links[Math.max(i-5,0)]",   // and above it for a reader scrolling back up
+	)
 
 	second := readPage(t, out, "guide/second.html")
 	want(t, "guide/second.html", second,
@@ -195,6 +204,9 @@ func TestBuildClean(t *testing.T) {
 		"overflow: auto; max-height: min(75vh, 42rem)",
 		// a diagram takes the width of the pane, not just the text column
 		"@container (min-width: 50rem) { .mm-view { width: 100cqi; } }",
+		// the rail follows its highlight with an animated scroll, and stops for a reader
+		// who asks for no motion
+		"@media (prefers-reduced-motion: reduce) { .toc { scroll-behavior: auto; } }",
 		// the control chip floats inside the diagram's frame
 		".mm-bar { position: absolute; top: .45rem; right: .6rem",
 		// expand covers the screen: the pane's width and the margin that doubles the
@@ -205,6 +217,10 @@ func TestBuildClean(t *testing.T) {
 	// The scroll box is the panel, so it takes the panel's height and not a second
 	// guess at the viewport height, which left a band of panel under the diagram.
 	wantNot(t, "_assets/docs.css", css, "calc(100vh - 6rem)")
+	// The smooth one is the rail's own rule, not main's: only a box that scrolls on its
+	// own can need a follow.
+	want(t, "_assets/docs.css .toc", sliceBetween(t, "_assets/docs.css", css, "\n  .toc {\n", "\n  }"),
+		"max-height: calc(100vh - 4rem); overflow-y: auto", "scroll-behavior: smooth")
 
 	embeds := readPage(t, out, "embeds.html")
 	want(t, "embeds.html", embeds, `src="https://embed.example.com/doc/1"`)
