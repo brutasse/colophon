@@ -14,10 +14,7 @@ import (
 	"time"
 
 	"github.com/brutasse/petroglyph"
-
 	"github.com/microcosm-cc/bluemonday"
-	"github.com/yuin/goldmark"
-	"github.com/yuin/goldmark/text"
 )
 
 type heading struct {
@@ -62,7 +59,7 @@ type Site struct {
 	Search     bool   // pagefind bundle built; gates the search UI markup
 	Dev        bool
 
-	md     goldmark.Markdown
+	md     *petroglyph.Markdown
 	policy *bluemonday.Policy // petroglyph DisplayPolicy + configured iframe hosts
 
 	Pages map[string]*Page
@@ -433,9 +430,9 @@ func (s *Site) renderPage(rel, raw string) *Page {
 	body = s.preprocess(body, path.Dir(rel), 0, res, meta["nav"] == "list")
 
 	source := []byte(body)
-	doc := s.md.Parser().Parse(text.NewReader(source))
+	doc := s.md.Parser.Parse(source)
 	var buf bytes.Buffer
-	if err := s.md.Renderer().Render(&buf, source, doc); err != nil {
+	if err := s.md.Renderer.Render(&buf, source, doc); err != nil {
 		fmt.Fprintf(os.Stderr, "render error %s: %v\n", rel, err)
 	}
 	h := string(s.policy.SanitizeBytes(buf.Bytes()))
