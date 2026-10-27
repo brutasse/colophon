@@ -141,17 +141,17 @@ func (s *Site) requestAsset(upath string) (assetFile, bool) {
 // isHashedStatic reports whether rel is one of the config files published at a
 // content-addressed URL, which the dev server re-digests when it is saved.
 func (s *Site) isHashedStatic(rel string) bool {
-	return rel != "" && (rel == s.logoSrc || rel == s.faviconSrc)
+	return rel != "" && (rel == s.logoSrc || rel == s.logoDarkSrc || rel == s.faviconSrc)
 }
 
-// hashedStatics reads the config's logo: and favicon: files and publishes each at
+// hashedStatics reads the config's logo:, logo-dark: and favicon: files and publishes each at
 // a URL naming its bytes, which is what the header tags colophon writes point at.
 // copyStatics still copies each file to its own path, so a page that links the
 // logo directly keeps working. Nothing is replaced until every file reads, so a
 // save that deletes one leaves the site serving what it served before, with the
 // failure reported.
 func (s *Site) hashedStatics() error {
-	rels := []string{s.logoSrc, s.faviconSrc}
+	rels := []string{s.logoSrc, s.logoDarkSrc, s.faviconSrc}
 	urls := make([]string, len(rels))
 	ix := &assetIndex{}
 	for i, rel := range rels {
@@ -169,7 +169,7 @@ func (s *Site) hashedStatics() error {
 	s.staticMu.Lock()
 	s.statics = ix
 	s.staticMu.Unlock()
-	s.Logo, s.Favicon = urls[0], urls[1]
+	s.Logo, s.LogoDark, s.Favicon = urls[0], urls[1], urls[2]
 	return nil
 }
 
@@ -196,6 +196,7 @@ type pageData struct {
 	Copyright string
 	EditBase  string
 	Logo      string
+	LogoDark  string
 	Favicon   string
 	Content   template.HTML
 	Sidebar   template.HTML

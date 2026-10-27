@@ -32,8 +32,21 @@ a:hover { text-decoration: underline; }
   display: flex; align-items: center; background: var(--accent); color: #fff;
   font-weight: 700; font-size: 1.05rem; padding: .65rem 1.2rem;
 }
-.brand img { height: 1.6rem; display: block; }
+.brand img { width: 100%; height: auto; display: block; }
+.brand .brand-dark { display: none; }
 .brand:hover { color: #fff; text-decoration: none; }
+
+/* A config logo-dark replaces the brand's art in either dark mode, on the dark
+   theme's own background instead of the accent: an accent-colored bar would
+   recolour under a logo built to sit on darkness. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .brand-themed { background: var(--sidebar-bg); }
+  :root:not([data-theme="light"]) .brand-themed .brand-dark { display: block; }
+  :root:not([data-theme="light"]) .brand-themed img:not(.brand-dark) { display: none; }
+}
+[data-theme="dark"] .brand-themed { background: var(--sidebar-bg); }
+[data-theme="dark"] .brand-themed .brand-dark { display: block; }
+[data-theme="dark"] .brand-themed img:not(.brand-dark) { display: none; }
 
 .layout { display: flex; max-width: 82rem; margin: 0 auto; }
 .sidebar {

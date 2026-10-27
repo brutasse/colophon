@@ -317,6 +317,7 @@ func (s *Site) wrapPage(p *Page) ([]byte, error) {
 		Copyright: s.Copyright,
 		EditBase:  s.EditBase,
 		Logo:      s.Logo,
+		LogoDark:  s.LogoDark,
 		Favicon:   s.Favicon,
 		Content:   template.HTML(p.Body),
 		Sidebar:   template.HTML(s.renderSidebar(p)),

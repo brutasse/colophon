@@ -32,7 +32,7 @@ watch();
 <body class="docs">
 <div class="layout">
 <nav class="sidebar" id="sidebar">
-<a class="brand" href="{{.Prefix}}index.html">{{if .Logo}}<img src="{{.Prefix}}{{.Logo}}" alt="{{.SiteTitle}}">{{else}}{{.SiteTitle}}{{end}}</a>
+<a class="brand{{if .LogoDark}} brand-themed{{end}}" href="{{.Prefix}}index.html">{{if .Logo}}<img src="{{.Prefix}}{{.Logo}}" alt="{{.SiteTitle}}">{{if .LogoDark}}<img class="brand-dark" src="{{.Prefix}}{{.LogoDark}}" alt="{{.SiteTitle}}">{{end}}{{else}}{{.SiteTitle}}{{end}}</a>
 {{if .Search}}<div class="search-row"><pagefind-modal-trigger placeholder="Search docs"></pagefind-modal-trigger></div>{{end}}
 <div class="navlist">{{.Sidebar}}</div>
 <button class="theme-toggle" type="button" aria-label="Toggle color theme"></button>

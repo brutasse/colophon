@@ -58,6 +58,7 @@ type Site struct {
 	BaseHost   string // host of base-url, for detecting self-referential links
 	Copyright  string // "{year}" already substituted; empty = no footer line
 	Logo       string // content-addressed URL; empty = brand is the site title text
+	LogoDark   string // same, shown in place of Logo by the dark theme blocks
 	Favicon    string // content-addressed URL; empty = no favicon link
 	Accent     string // hex override of the light --accent; empty = docs.css default
 	AccentDark string // hex override of the dark --accent; empty = docs.css default
@@ -78,13 +79,14 @@ type Site struct {
 	frags  map[string]bool // source rel → declared `fragment: true`
 
 	// statics holds the config-named files colophon publishes at a
-	// content-addressed URL (logo, favicon), indexed by that URL. The dev server
+	// content-addressed URL (logo, logo-dark, favicon), indexed by that URL. The dev server
 	// swaps the whole index when one is saved, so an address always names the same
 	// bytes and a request for a superseded one is a miss, not a stale file.
-	staticMu   sync.Mutex
-	statics    *assetIndex
-	logoSrc    string // source-relative name of the file each URL above was digested from
-	faviconSrc string
+	staticMu    sync.Mutex
+	statics     *assetIndex
+	logoSrc     string // source-relative name of the file each URL above was digested from
+	logoDarkSrc string
+	faviconSrc  string
 }
 
 // loadConf reads the flat "key: value" site config (same dialect as page
@@ -153,14 +155,14 @@ func NewSite(confPath, tagsCSV string) (*Site, error) {
 			*key.def = strings.ReplaceAll(v, "{year}", year)
 		}
 	}
-	// logo/favicon name a file under the source directory; a typo fails the build
+	// logo/logo-dark/favicon name a file under the source directory; a typo fails the build
 	// instead of shipping a broken image. hashedStatics publishes each under
 	// /_assets/ at a name derived from its bytes.
 	for _, key := range []struct {
 		conf string
 		dst  *string
 	}{
-		{"logo", &s.logoSrc}, {"favicon", &s.faviconSrc},
+		{"logo", &s.logoSrc}, {"logo-dark", &s.logoDarkSrc}, {"favicon", &s.faviconSrc},
 	} {
 		if v := conf[key.conf]; v != "" {
 			rel := strings.TrimPrefix(v, "/")

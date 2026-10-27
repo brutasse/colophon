@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"mime"
 	"net/http"
 	"os"
 	"path"
@@ -456,6 +457,13 @@ func serveAsset(w http.ResponseWriter, upath string, a assetFile) {
 		w.Header().Set("Content-Type", "text/css; charset=utf-8")
 	case ".js":
 		w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
+	default:
+		// A name the built-in table knows gets its type stated; without this a
+		// config logo's SVG bytes would be sniffed to text/plain, which is an
+		// image no browser will render. Unknown extensions keep sniffing.
+		if ct := mime.TypeByExtension(path.Ext(upath)); ct != "" {
+			w.Header().Set("Content-Type", ct)
+		}
 	}
 	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 	w.Write(a.b)

@@ -1092,7 +1092,7 @@ func TestContentDigestAddressesBytes(t *testing.T) {
 	}
 }
 
-// The config's logo and favicon are the site's own files, and colophon names one in
+// The config's logo, logo-dark and favicon are the site's own files, and colophon names one in
 // every page header, so they are addressed like the binary's assets: a replaced file
 // arrives at a URL no cache has ever held. A file deleted mid-session must not leave the
 // site publishing an address with nothing behind it.
@@ -1112,9 +1112,12 @@ func TestHashedStaticsMoveWithTheirBytes(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(src, "index.md"), []byte("# Home\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(src, "logo-dark.svg"), []byte("<svg><rect/></svg>\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	write([]byte("<svg></svg>\n"))
 	conf := filepath.Join(dir, "colophon.conf")
-	if err := os.WriteFile(conf, []byte("source: source\nlogo: logo.svg\nfavicon: logo.svg\n"), 0o644); err != nil {
+	if err := os.WriteFile(conf, []byte("source: source\nlogo: logo.svg\nlogo-dark: logo-dark.svg\nfavicon: logo.svg\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	s, err := NewSite(conf, "")
@@ -1132,6 +1135,28 @@ func TestHashedStaticsMoveWithTheirBytes(t *testing.T) {
 	}
 	if string(a.b) != "<svg></svg>\n" {
 		t.Errorf("%s resolves to the wrong bytes", first)
+	}
+	// logo-dark is its own address with its own bytes, and the brand gains the
+	// class the dark theme blocks need to swap one img for the other.
+	if s.LogoDark == s.Logo || !strings.HasPrefix(s.LogoDark, assetDir+"/logo-dark.") {
+		t.Errorf("logo-dark %q, want its own %s/logo-dark.<digest>.svg", s.LogoDark, assetDir)
+	}
+	if a, ok := s.requestAsset(s.LogoDark); !ok || string(a.b) != "<svg><rect/></svg>\n" {
+		t.Errorf("%s does not resolve to its bytes", s.LogoDark)
+	}
+	if !s.isHashedStatic("logo-dark.svg") {
+		t.Error("logo-dark is no hashed static, so saving it rebuilds nothing")
+	}
+	if err := s.BuildAll(); err != nil {
+		t.Fatalf("BuildAll: %v", err)
+	}
+	page, err := s.wrapPage(s.Pages["index.md"])
+	if err != nil {
+		t.Fatalf("wrapPage: %v", err)
+	}
+	if !strings.Contains(string(page), `class="brand brand-themed"`) ||
+		!strings.Contains(string(page), `<img class="brand-dark" src="`+s.LogoDark) {
+		t.Error("the brand does not name the dark logo the theme blocks swap to")
 	}
 	out := t.TempDir()
 	if err := s.writeStatics(out); err != nil {
@@ -1206,6 +1231,15 @@ func TestAssetHeaders(t *testing.T) {
 	noStore(http.NotFoundHandler()).ServeHTTP(rec, httptest.NewRequest("GET", "/pagefind/pagefind.js", nil))
 	if got := rec.Header().Get("Cache-Control"); got != "no-store" {
 		t.Errorf("/pagefind/ served with Cache-Control %q, want no-store", got)
+	}
+
+	// An SVG carries no magic bytes a sniffer could name, so its type has to come
+	// from the extension: served as sniffed text/plain, a config logo is an image
+	// no browser will render, and the brand shows only its alt text.
+	rec = httptest.NewRecorder()
+	serveAsset(rec, assetDir+"/logo.deadbeefdeadbeef.svg", assetFile{b: []byte("<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>")})
+	if got := rec.Header().Get("Content-Type"); got != "image/svg+xml" {
+		t.Errorf("an svg asset served as %q, want image/svg+xml", got)
 	}
 }
 
