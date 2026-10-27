@@ -113,7 +113,8 @@ var embeddedAssets = sync.OnceValue(func() *assetIndex {
 	return ix
 })
 
-// assetURL resolves one of the binary's own assets to its content-addressed URL.
+// assetURL resolves one of the binary's own assets to its content-addressed URL,
+// site-root-relative; a page prepends its own Prefix to reach it.
 // A name with no asset behind it is a bug in tmpl/page.tmpl, and it fails the
 // build rather than shipping a URL that 404s on every page.
 func assetURL(name string) (string, error) {
@@ -121,7 +122,7 @@ func assetURL(name string) (string, error) {
 	if !ok {
 		return "", fmt.Errorf("no embedded asset %q", name)
 	}
-	return "/" + a.path, nil
+	return a.path, nil
 }
 
 // requestAsset resolves a /_assets/ request: the binary's own files first, then
@@ -163,7 +164,7 @@ func (s *Site) hashedStatics() error {
 		}
 		// The address carries the file name a reader recognizes, not the directory
 		// the site kept it in.
-		urls[i] = "/" + ix.publish(path.Base(rel), b).path
+		urls[i] = ix.publish(path.Base(rel), b).path
 	}
 	s.staticMu.Lock()
 	s.statics = ix
@@ -191,6 +192,7 @@ func (s *Site) writeStatics(out string) error {
 type pageData struct {
 	Title     string
 	SiteTitle string
+	Prefix    string // the page's path back to the site root, prepended to every chrome URL
 	Copyright string
 	EditBase  string
 	Logo      string

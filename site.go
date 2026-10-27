@@ -24,8 +24,13 @@ type heading struct {
 }
 
 type Page struct {
-	Rel         string // source-relative path, e.g. runbooks/foo.md
-	OutPath     string // site-relative output, e.g. runbooks/foo.html
+	Rel     string // source-relative path, e.g. runbooks/foo.md
+	OutPath string // site-relative output, e.g. runbooks/foo.html
+	// Prefix walks from this page's own output directory back to the site root:
+	// "" at the root, "../" one deep. Chrome URLs (brand, sidebar, assets,
+	// search) carry it, so a site served under a subpath resolves them the same
+	// way a site served at a domain root does.
+	Prefix      string
 	Title       string
 	Meta        map[string]string
 	Headings    []heading
@@ -444,6 +449,7 @@ func (s *Site) renderPage(rel, raw string) *Page {
 	p := &Page{
 		Rel:         rel,
 		OutPath:     outPath(rel),
+		Prefix:      strings.Repeat("../", strings.Count(rel, "/")),
 		Meta:        meta,
 		Includes:    res.includes,
 		NavChildren: res.navChildren,

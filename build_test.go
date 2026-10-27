@@ -105,9 +105,9 @@ func TestBuildClean(t *testing.T) {
 		fmt.Sprintf(`<img src=%q alt="Colophon test site">`, s.Logo),
 		fmt.Sprintf(`<link rel="icon" href=%q>`, s.Favicon),
 		`--accent: #0b7285;`,
-		`<a href="/guide/index.html">Guide</a>`, // sidebar
-		`href="guide/first.html"`,               // .md link rewritten to .html
-		`© 2024-`,                               // {year} substituted in copyright
+		`<a href="guide/index.html">Guide</a>`, // sidebar, home-relative like every chrome URL
+		`href="guide/first.html"`,              // .md link rewritten to .html
+		`© 2024-`,                              // {year} substituted in copyright
 		`<a href="https://example.com/edit/main/testdata/site/source/index.md">Edit this page</a>`,
 	)
 	wantNot(t, "index.html", index, "pagefind-modal", `href="guide/first.md"`)
@@ -115,23 +115,25 @@ func TestBuildClean(t *testing.T) {
 	// reader's cache ever having held the name it replaces. The copy at the
 	// configured path stays for anything that links the file directly.
 	for _, u := range []string{s.Logo, s.Favicon} {
-		if !strings.HasPrefix(u, "/_assets/logo.") || !exists(out, strings.TrimPrefix(u, "/")) {
-			t.Errorf("config image published at %q, want a written /_assets/logo.<digest>.svg", u)
+		if !strings.HasPrefix(u, "_assets/logo.") || !exists(out, u) {
+			t.Errorf("config image published at %q, want a written _assets/logo.<digest>.svg", u)
 		}
 	}
 	// The gated subtree is listed in the home nav but is not built without its
-	// tag, so it must stay out of the sidebar too.
-	wantNot(t, "index.html", index, `<a href="/gated/index.html"`)
+	// tag, so it must stay out of the sidebar too. The home body keeps its own
+	// link to it; the gate is what the navigation shows.
+	wantNot(t, "index.html sidebar", sliceBetween(t, "index.html", index, `<nav class="sidebar"`, "</nav>"),
+		`<a href="gated/index.html"`)
 
 	guide := readPage(t, out, "guide/index.html")
 	want(t, "guide/index.html", guide,
 		`<title>Guide · Colophon test site</title>`, // title from the h1
 		`<nav class="page-toc">`,                    // toc: true
 		`<nav class="toc" aria-label="On this page">`,
-		`<a href="/guide/first.html">`, // nav: list children
-		`<a href="/guide/second.html">`,
+		`<a href="../guide/first.html">`, // nav: list children, one level up like every chrome URL
+		`<a href="../guide/second.html">`,
 		`<span class="here">Guide</span>`, // breadcrumbs end on the page itself
-		`<a class="next" href="/guide/first.html">`,
+		`<a class="next" href="../guide/first.html">`,
 	)
 
 	first := readPage(t, out, "guide/first.html")
@@ -145,7 +147,7 @@ func TestBuildClean(t *testing.T) {
 		`<div id="my-target"></div>`, // raw HTML keeps a legacy anchor
 		`src="../_static/logo.svg"`,  // asset links stay file-relative
 		`href="#target-section"`,
-		`<a class="prev" href="/guide/index.html">`,
+		`<a class="prev" href="../guide/index.html">`,
 	)
 	wantNot(t, "guide/first.html", first,
 		"colophon:include", // every include comment was consumed, fenced fragment included
@@ -155,8 +157,8 @@ func TestBuildClean(t *testing.T) {
 	// sidebar row and a rail entry pointing at the anchor the page already had.
 	composite := readPage(t, out, "guide/composite.html")
 	want(t, "guide/composite.html", composite,
-		`<a href="/guide/composite.html#second-glued-document">Second glued document</a>`, // sidebar
-		`<a href="#third-glued-document">Third glued document</a>`,                        // rail
+		`<a href="../guide/composite.html#second-glued-document">Second glued document</a>`, // sidebar
+		`<a href="#third-glued-document">Third glued document</a>`,                          // rail
 	)
 	// On the index, the sections are a sub-list of the item that holds them. What
 	// `#all` decides is which headings are in that list: composite.md is a set of
@@ -222,8 +224,8 @@ func TestGatedTagBuild(t *testing.T) {
 	}
 	gated := readPage(t, out, "gated/details.html")
 	want(t, "gated/details.html", gated,
-		`<a href="/index.html">Home</a>`, // home-label
-		`<a href="/gated/index.html">Gated section</a>`,
+		`<a href="../index.html">Home</a>`, // home-label
+		`<a href="../gated/index.html">Gated section</a>`,
 	)
 	// The subtree is upstream-owned: its problems are informational only, so
 	// it must not add gating errors either way.
@@ -821,8 +823,9 @@ func TestDevReloadUsesWebSocket(t *testing.T) {
 	}
 }
 
-// assetRefRe matches an asset URL a page points at: src="/_assets/site.js".
-var assetRefRe = regexp.MustCompile(`(?:src|href)="/(_assets/[^"]+)"`)
+// assetRefRe matches an asset URL a page points at: src="../_assets/site.js" from a
+// nested page, src="_assets/site.js" from the root — a chrome URL and its page prefix.
+var assetRefRe = regexp.MustCompile(`(?:src|href)="(?:\.\./)*(_assets/[^"]+)"`)
 
 // builtPages lists every page of a built site.
 func builtPages(out string) ([]string, error) {
@@ -900,8 +903,9 @@ func indexSrc(scripts []pageScript, src string) int {
 }
 
 // searchURL is the one script a page names that colophon does not address: pagefind
-// writes its own bundle, under its own names.
-const searchURL = "/pagefind/pagefind-component-ui.js"
+// writes its own bundle, under its own names. Like every chrome URL a page gets it with
+// its own Prefix in front.
+const searchURL = "pagefind/pagefind-component-ui.js"
 
 // assetURLt resolves one of the binary's assets to the URL a page's tag names it by,
 // through the lookup the template calls. Editing a stylesheet moves the address, so the
@@ -934,19 +938,19 @@ func writtenAssets(t *testing.T) []string {
 func wantScripts(t *testing.T, s *Site, p *Page, page string) []string {
 	var want []string
 	if s.Search {
-		want = append(want, searchURL)
+		want = append(want, p.Prefix+searchURL)
 	}
 	if p.Flags.Math {
-		want = append(want, assetURLt(t, "vendor/tex-svg.js"))
+		want = append(want, p.Prefix+assetURLt(t, "vendor/tex-svg.js"))
 	}
 	if p.Flags.Mermaid {
-		want = append(want, assetURLt(t, "vendor/mermaid.min.js"), assetURLt(t, "mermaid-viewer.js"))
+		want = append(want, p.Prefix+assetURLt(t, "vendor/mermaid.min.js"), p.Prefix+assetURLt(t, "mermaid-viewer.js"))
 	}
-	want = append(want, assetURLt(t, "site.js")) // the theme control and the mobile nav, one file for the whole site
+	want = append(want, p.Prefix+assetURLt(t, "site.js")) // the theme control and the mobile nav, one file for the whole site
 	// The rail is toc.js's whole subject — its first line gives up without one — so the
 	// tag follows the <nav> and no flag decides either of them.
 	if strings.Contains(page, `<nav class="toc"`) {
-		want = append(want, assetURLt(t, "toc.js"))
+		want = append(want, p.Prefix+assetURLt(t, "toc.js"))
 	}
 	return want
 }
@@ -977,8 +981,8 @@ func TestBuiltPageScriptTags(t *testing.T) {
 		// own tag rather than an onload handler: only deferred tags have a document order to
 		// run in, and the viewer calls mermaid.initialize.
 		if p.Flags.Mermaid {
-			vendor := indexSrc(got, assetURLt(t, "vendor/mermaid.min.js"))
-			viewer := indexSrc(got, assetURLt(t, "mermaid-viewer.js"))
+			vendor := indexSrc(got, p.Prefix+assetURLt(t, "vendor/mermaid.min.js"))
+			viewer := indexSrc(got, p.Prefix+assetURLt(t, "mermaid-viewer.js"))
 			if vendor >= 0 && viewer >= 0 {
 				if !got[vendor].deferred || !got[viewer].deferred {
 					t.Errorf("%s: a mermaid tag is not deferred, so the two run in the order the parser reaches them", rel)
@@ -990,7 +994,7 @@ func TestBuiltPageScriptTags(t *testing.T) {
 		}
 		// MathJax is configured by an inline tag, which the list above says nothing about,
 		// so its position against the runtime is checked in the document itself.
-		if tex := strings.Index(page, assetURLt(t, "vendor/tex-svg.js")); p.Flags.Math && tex >= 0 && strings.Index(page, "window.MathJax") > tex {
+		if tex := strings.Index(page, p.Prefix+assetURLt(t, "vendor/tex-svg.js")); p.Flags.Math && tex >= 0 && strings.Index(page, "window.MathJax") > tex {
 			t.Errorf("%s: the MathJax configuration follows the runtime that reads it", rel)
 		}
 		// A reference is a promise the build has to keep: every asset a page names, script
@@ -1118,10 +1122,10 @@ func TestHashedStaticsMoveWithTheirBytes(t *testing.T) {
 		t.Fatalf("NewSite: %v", err)
 	}
 	// One file named twice is one address, and the address still says what it holds.
-	if s.Logo != s.Favicon || !strings.HasPrefix(s.Logo, "/"+assetDir+"/logo.") || !strings.HasSuffix(s.Logo, ".svg") {
-		t.Fatalf("logo %q, favicon %q: want one content-addressed /%s/logo.<digest>.svg", s.Logo, s.Favicon, assetDir)
+	if s.Logo != s.Favicon || !strings.HasPrefix(s.Logo, assetDir+"/logo.") || !strings.HasSuffix(s.Logo, ".svg") {
+		t.Fatalf("logo %q, favicon %q: want one content-addressed %s/logo.<digest>.svg", s.Logo, s.Favicon, assetDir)
 	}
-	first := strings.TrimPrefix(s.Logo, "/")
+	first := s.Logo
 	a, ok := s.requestAsset(first)
 	if !ok {
 		t.Fatalf("%s resolves to nothing", first)
@@ -1144,7 +1148,7 @@ func TestHashedStaticsMoveWithTheirBytes(t *testing.T) {
 	if err := s.hashedStatics(); err != nil {
 		t.Fatalf("hashedStatics: %v", err)
 	}
-	second := strings.TrimPrefix(s.Logo, "/")
+	second := s.Logo
 	if second == first {
 		t.Fatal("a changed logo kept its address")
 	}

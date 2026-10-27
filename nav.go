@@ -60,7 +60,7 @@ func (s *Site) buildNav() {
 			n.Children = append(n.Children, &node{
 				Rel:   rel + "#" + hd.ID,
 				Label: hd.Text,
-				Href:  "/" + outPath(rel) + "#" + hd.ID,
+				Href:  outPath(rel) + "#" + hd.ID,
 			})
 		}
 		return n
@@ -146,9 +146,9 @@ func (s *Site) renderSidebar(p *Page) string {
 	}
 	var renderNode func(n *node, active string)
 	renderNode = func(n *node, active string) {
-		title, href := n.Rel, "/"+outPath(n.Rel)
+		title, href := n.Rel, p.Prefix+outPath(n.Rel)
 		if n.Label != "" {
-			title, href = n.Label, n.Href
+			title, href = n.Label, p.Prefix+n.Href
 		} else if pp, ok := s.Pages[n.Rel]; ok {
 			title = pp.Title
 		}
@@ -221,7 +221,7 @@ func (s *Site) navSectionLists(p *Page, body string) string {
 
 func (s *Site) renderCrumbs(p *Page) string {
 	var parts []string
-	parts = append(parts, fmt.Sprintf(`<a href="/index.html">%s</a>`, html.EscapeString(s.HomeLabel)))
+	parts = append(parts, fmt.Sprintf(`<a href="%sindex.html">%s</a>`, p.Prefix, html.EscapeString(s.HomeLabel)))
 	for _, a := range s.chain[p.Rel] {
 		if a == p.Rel {
 			continue // index page: it appears as the plain tail below
@@ -230,7 +230,7 @@ func (s *Site) renderCrumbs(p *Page) string {
 		if pp, ok := s.Pages[a]; ok {
 			title = pp.Title
 		}
-		parts = append(parts, fmt.Sprintf(`<a href="/%s">%s</a>`, html.EscapeString(outPath(a)), html.EscapeString(title)))
+		parts = append(parts, fmt.Sprintf(`<a href="%s%s">%s</a>`, p.Prefix, html.EscapeString(outPath(a)), html.EscapeString(title)))
 	}
 	// the current page closes the trail, unlinked
 	parts = append(parts, fmt.Sprintf(`<span class="here">%s</span>`, html.EscapeString(p.Title)))
@@ -240,10 +240,10 @@ func (s *Site) renderCrumbs(p *Page) string {
 func (s *Site) renderPrevNext(p *Page) string {
 	var b strings.Builder
 	if pv, ok := s.prev[p.Rel]; ok && pv != nil {
-		fmt.Fprintf(&b, `<a class="prev" href="/%s">← %s</a>`, html.EscapeString(pv.OutPath), html.EscapeString(pv.Title))
+		fmt.Fprintf(&b, `<a class="prev" href="%s">← %s</a>`, html.EscapeString(p.Prefix+pv.OutPath), html.EscapeString(pv.Title))
 	}
 	if nx, ok := s.next[p.Rel]; ok && nx != nil {
-		fmt.Fprintf(&b, `<a class="next" href="/%s">%s →</a>`, html.EscapeString(nx.OutPath), html.EscapeString(nx.Title))
+		fmt.Fprintf(&b, `<a class="next" href="%s">%s →</a>`, html.EscapeString(p.Prefix+nx.OutPath), html.EscapeString(nx.Title))
 	}
 	return b.String()
 }
@@ -313,6 +313,7 @@ func (s *Site) wrapPage(p *Page) ([]byte, error) {
 	data := pageData{
 		Title:     p.Title,
 		SiteTitle: s.SiteTitle,
+		Prefix:    p.Prefix,
 		Copyright: s.Copyright,
 		EditBase:  s.EditBase,
 		Logo:      s.Logo,

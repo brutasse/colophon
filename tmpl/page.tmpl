@@ -5,15 +5,18 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <script>if (localStorage.theme) document.documentElement.dataset.theme = localStorage.theme;</script>
 <title>{{.Title}} · {{.SiteTitle}}</title>
-{{if .Favicon}}<link rel="icon" href="{{.Favicon}}">{{end}}
-<link rel="stylesheet" href="{{asset "docs.css"}}">
-<link rel="stylesheet" href="{{asset "chroma.css"}}">
+{{if .Favicon}}<link rel="icon" href="{{.Prefix}}{{.Favicon}}">{{end}}
+<link rel="stylesheet" href="{{.Prefix}}{{asset "docs.css"}}">
+<link rel="stylesheet" href="{{.Prefix}}{{asset "chroma.css"}}">
 {{if .AccentCSS}}<style>{{.AccentCSS}}</style>{{end}}
-{{if .Search}}<link rel="stylesheet" href="/pagefind/pagefind-component-ui.css">
-<script type="module" src="/pagefind/pagefind-component-ui.js"></script>{{end}}
+{{if .Search}}<link rel="stylesheet" href="{{.Prefix}}pagefind/pagefind-component-ui.css">
+{{/* Classic, not module: the bundle infers its own location from the URL this tag was
+     loaded from, and a module script does not expose one. Loaded classic from a
+     page-relative src, search resolves from any deploy path and at any page depth. */}}
+<script defer src="{{.Prefix}}pagefind/pagefind-component-ui.js"></script>{{end}}
 {{if .Math}}<script>window.MathJax = {tex: {inlineMath: [["\\(", "\\)"]], displayMath: [["\\[", "\\]"]]}, options: {skipHtmlTags: ["script","noscript","style","textarea","pre","code"]}};</script>
-<script defer src="{{asset "vendor/tex-svg.js"}}"></script>{{end}}
-{{if .Mermaid}}<script defer src="{{asset "vendor/mermaid.min.js"}}"></script>{{end}}
+<script defer src="{{.Prefix}}{{asset "vendor/tex-svg.js"}}"></script>{{end}}
+{{if .Mermaid}}<script defer src="{{.Prefix}}{{asset "vendor/mermaid.min.js"}}"></script>{{end}}
 {{if .Dev}}<script>(function(){
 /* A WebSocket, not a stream: a stream would take one of the browser's six
    connections per origin for the life of the page. */
@@ -29,7 +32,7 @@ watch();
 <body class="docs">
 <div class="layout">
 <nav class="sidebar" id="sidebar">
-<a class="brand" href="/index.html">{{if .Logo}}<img src="{{.Logo}}" alt="{{.SiteTitle}}">{{else}}{{.SiteTitle}}{{end}}</a>
+<a class="brand" href="{{.Prefix}}index.html">{{if .Logo}}<img src="{{.Prefix}}{{.Logo}}" alt="{{.SiteTitle}}">{{else}}{{.SiteTitle}}{{end}}</a>
 {{if .Search}}<div class="search-row"><pagefind-modal-trigger placeholder="Search docs"></pagefind-modal-trigger></div>{{end}}
 <div class="navlist">{{.Sidebar}}</div>
 <button class="theme-toggle" type="button" aria-label="Toggle color theme"></button>
@@ -45,8 +48,8 @@ watch();
 </div>
 {{if .Search}}<pagefind-modal reset-on-close></pagefind-modal>{{end}}
 {{/* initialises mermaid, so it must stay behind the vendor tag above: deferred scripts run in document order. */}}
-{{if .Mermaid}}<script defer src="{{asset "mermaid-viewer.js"}}"></script>{{end}}
-<script defer src="{{asset "site.js"}}"></script>
-{{if .TOC}}<script defer src="{{asset "toc.js"}}"></script>{{end}}
+{{if .Mermaid}}<script defer src="{{.Prefix}}{{asset "mermaid-viewer.js"}}"></script>{{end}}
+<script defer src="{{.Prefix}}{{asset "site.js"}}"></script>
+{{if .TOC}}<script defer src="{{.Prefix}}{{asset "toc.js"}}"></script>{{end}}
 </body>
 </html>
