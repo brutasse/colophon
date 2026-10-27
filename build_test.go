@@ -820,6 +820,13 @@ func TestDevReloadUsesWebSocket(t *testing.T) {
 		if k := renderedKey("/" + p.OutPath); k != p.OutPath {
 			t.Errorf("%s: renderedKey(%q) = %q, want the page's own output path", rel, "/"+p.OutPath, k)
 		}
+		// The section index behind a section URL is the same page a static
+		// host would serve at that directory.
+		if dir, ok := strings.CutSuffix(p.OutPath, "index.html"); ok && dir != "" {
+			if k := renderedKey("/" + dir + "/"); k != p.OutPath {
+				t.Errorf("%s: renderedKey(%q) = %q, want the page at its directory URL", rel, "/"+dir+"/", k)
+			}
+		}
 	}
 }
 
@@ -1442,6 +1449,10 @@ func TestRenderedKey(t *testing.T) {
 		{"/index.html", "index.html"},
 		{"/guide/first.html", "guide/first.html"},
 		{"/guide/../first.html", "first.html"},
+		// A directory URL addresses its index, so a section reachable at
+		// guide/index.html is reachable at guide/, as on any static host.
+		{"/guide/", "guide/index.html"},
+		{"/nope/", "nope/index.html"},
 	} {
 		if got := renderedKey(tc.urlPath); got != tc.key {
 			t.Errorf("renderedKey(%q) = %q, want %q", tc.urlPath, got, tc.key)

@@ -510,7 +510,13 @@ func (s *Site) checkChanged(changed map[string]bool) {
 func renderedKey(urlPath string) string {
 	k := strings.TrimPrefix(path.Clean(urlPath), "/")
 	if k == "" || k == "." {
-		k = "index.html"
+		return "index.html"
+	}
+	if strings.HasSuffix(urlPath, "/") {
+		// A directory URL addresses its index, the way every static host the
+		// site may land on reads one. Clean has already collapsed any .., so
+		// the joined key is still just a map lookup: miss means 404.
+		k = path.Join(k, "index.html")
 	}
 	return k
 }
