@@ -67,6 +67,20 @@ a:hover { text-decoration: underline; }
 .theme-toggle:hover { color: var(--fg); }
 .search-row { padding: .55rem 1rem; border-bottom: 1px solid var(--line); }
 .search-row pagefind-modal-trigger { width: 100%; }
+/* The search UI is pagefind's own component bundle, themed through these
+   --pf-* names (its icons are masks tinted by --pf-text, so colouring that
+   one variable colours them too). Mapped to the site's palette, the modal
+   rethemes with the toggle; docs.css must load after the bundle's stylesheet
+   for these to win at :root's specificity. --pf-mark is the text colour of a
+   search hit, which the bundle sets bold on a transparent background — it is
+   emphasis, not a highlight chip, so it takes the palette's foreground. */
+:root {
+  --pf-text: var(--fg); --pf-text-secondary: var(--muted); --pf-text-muted: var(--muted);
+  --pf-background: var(--bg); --pf-border: var(--line); --pf-border-focus: var(--muted);
+  --pf-hover: var(--code-bg); --pf-skeleton: var(--line); --pf-mark: var(--fg);
+  --pf-outline-focus: var(--accent);
+  --pf-error-text: var(--alert-caution); --pf-error-bg: var(--code-bg); --pf-error-border: var(--line);
+}
 
 main { flex: 1; min-width: 0; padding: 0 2.5rem 4rem; }
 .crumbs {

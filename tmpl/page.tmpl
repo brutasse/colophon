@@ -6,11 +6,11 @@
 <script>if (localStorage.theme) document.documentElement.dataset.theme = localStorage.theme;</script>
 <title>{{.Title}} · {{.SiteTitle}}</title>
 {{if .Favicon}}<link rel="icon" href="{{.Prefix}}{{.Favicon}}">{{end}}
+{{if .Search}}<link rel="stylesheet" href="{{.Prefix}}pagefind/pagefind-component-ui.css">{{end}}
 <link rel="stylesheet" href="{{.Prefix}}{{asset "docs.css"}}">
 <link rel="stylesheet" href="{{.Prefix}}{{asset "chroma.css"}}">
 {{if .AccentCSS}}<style>{{.AccentCSS}}</style>{{end}}
-{{if .Search}}<link rel="stylesheet" href="{{.Prefix}}pagefind/pagefind-component-ui.css">
-{{/* Classic, not module: the bundle infers its own location from the URL this tag was
+{{if .Search}}{{/* Classic, not module: the bundle infers its own location from the URL this tag was
      loaded from, and a module script does not expose one. Loaded classic from a
      page-relative src, search resolves from any deploy path and at any page depth. */}}
 <script defer src="{{.Prefix}}pagefind/pagefind-component-ui.js"></script>{{end}}

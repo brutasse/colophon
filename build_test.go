@@ -1040,6 +1040,22 @@ func TestBuiltPageScriptTags(t *testing.T) {
 			t.Fatalf("wrapPage: %v", err)
 		}
 		check(t, "index.html with search on", p, string(b))
+		// The bundle styles :root directly, so docs.css — which maps the bundle's
+		// --pf-* names onto the site's palette — must load after its link in the
+		// head, or the pagefind modal keeps its light palette in a dark theme.
+		page := string(b)
+		linkAt := strings.Index(page, "pagefind/pagefind-component-ui.css")
+		docsAt := strings.Index(page, strings.TrimPrefix(assetURLt(t, "docs.css"), "/"))
+		if linkAt < 0 || docsAt < 0 {
+			t.Fatal("the page loads no search stylesheet or no docs.css")
+		}
+		if linkAt > docsAt {
+			t.Error("the search stylesheet loads after docs.css, so its :root palette wins against the site's")
+		}
+		if !strings.Contains(embeddedAsset(t, "docs.css"), "--pf-background: var(--bg)") ||
+			!strings.Contains(embeddedAsset(t, "docs.css"), "--pf-mark: var(--fg)") {
+			t.Error("docs.css maps no search UI colours onto the site's palette")
+		}
 	})
 }
 
