@@ -21,6 +21,10 @@
 }
 * { box-sizing: border-box; }
 html { scroll-behavior: smooth; }
+/* Mobile browsers inflate text per overflowing block; inside a scrollable pre a
+   long line renders larger than its neighbours. The templates ship a
+   device-width viewport, so the heuristic is never wanted here. */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 body.docs {
   margin: 0; background: var(--bg); color: var(--fg);
   font: 16px/1.65 ui-sans-serif, system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
