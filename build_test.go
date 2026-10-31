@@ -102,6 +102,7 @@ func TestBuildClean(t *testing.T) {
 	index := readPage(t, out, "index.html")
 	want(t, "index.html", index,
 		"<title>Test docs home · Colophon test site</title>",
+		`class="brand brand-logo"`, // a logo fills the brand box; no themed swap without a logo-dark
 		fmt.Sprintf(`<img src=%q alt="Colophon test site">`, s.Logo),
 		fmt.Sprintf(`<link rel="icon" href=%q>`, s.Favicon),
 		`--accent: #0b7285;`,
@@ -1177,7 +1178,7 @@ func TestHashedStaticsMoveWithTheirBytes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("wrapPage: %v", err)
 	}
-	if !strings.Contains(string(page), `class="brand brand-themed"`) ||
+	if !strings.Contains(string(page), `class="brand brand-logo brand-themed"`) ||
 		!strings.Contains(string(page), `<img class="brand-dark" src="`+s.LogoDark) {
 		t.Error("the brand does not name the dark logo the theme blocks swap to")
 	}

@@ -39,16 +39,17 @@ a:hover { text-decoration: underline; }
 .brand img { width: 100%; height: auto; display: block; }
 .brand .brand-dark { display: none; }
 .brand:hover { color: #fff; text-decoration: none; }
+/* A configured logo takes the brand box edge-to-edge. The accent is the box's ground
+   in both themes: a transparent logo shows it, a logo with its own ground covers it,
+   and either way no accent frame is painted around the art. */
+.brand.brand-logo { padding: 0; }
 
-/* A config logo-dark replaces the brand's art in either dark mode, on the dark
-   theme's own background instead of the accent: an accent-colored bar would
-   recolour under a logo built to sit on darkness. */
+/* A config logo-dark replaces the brand's art in either dark mode; the ground stays
+   the accent, so the swap changes the art and nothing else. */
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .brand-themed { background: var(--sidebar-bg); }
   :root:not([data-theme="light"]) .brand-themed .brand-dark { display: block; }
   :root:not([data-theme="light"]) .brand-themed img:not(.brand-dark) { display: none; }
 }
-[data-theme="dark"] .brand-themed { background: var(--sidebar-bg); }
 [data-theme="dark"] .brand-themed .brand-dark { display: block; }
 [data-theme="dark"] .brand-themed img:not(.brand-dark) { display: none; }
 

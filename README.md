@@ -136,7 +136,8 @@ a key it does not know, which keeps a config shared with another tool usable.
 | `edit-base` | none | Base URL of the "Edit this page" link; no key means no link |
 | `base-url` | none | Public URL of this site; links to it are reported as non-portable |
 | `copyright` | none | Footer line; `{year}` becomes the build year |
-| `logo` | none | File under the source directory, published under `/_assets/` at a name derived from its bytes |
+| `logo` | none | File under the source directory, published under `/_assets/` at a name derived from its bytes; fills the sidebar brand box edge-to-edge, the accent being its background |
+| `logo-dark` | none | Same, shown in place of `logo` by the dark theme |
 | `favicon` | none | File under the source directory, published under `/_assets/` at a name derived from its bytes |
 | `accent` | theme blue | Hex colour override for the light theme |
 | `accent-dark` | theme blue | Hex colour override for the dark theme |
