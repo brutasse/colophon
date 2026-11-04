@@ -63,7 +63,8 @@ func (s *Site) Serve(addr string) error {
 	// publish puts a rendered page where the handler and the next wrap read it.
 	publish := func(p *Page) error {
 		s.Pages[p.Rel] = p
-		s.finalize(p) // sets p.Body; wrapPage renders from it
+		s.finalize(p)           // sets p.Body; wrapPage renders from it
+		s.updateLinksFor(p.Rel) // the body moved, so the page's outgoing links did
 		b, err := s.wrapPage(p)
 		if err != nil {
 			return err
@@ -81,6 +82,7 @@ func (s *Site) Serve(addr string) error {
 		if p == nil {
 			if old, ok := s.Pages[rel]; ok {
 				delete(s.Pages, rel)
+				s.dropPageLinks(rel)
 				mu.Lock()
 				delete(rendered, "/"+old.OutPath)
 				mu.Unlock()
@@ -93,6 +95,12 @@ func (s *Site) Serve(addr string) error {
 	if err := rebuild(); err != nil {
 		return err
 	}
+	// The first render reports the whole gate, so the author sees every standing
+	// problem, not only the ones a later save introduces. The link index backs
+	// the incremental check each save then runs.
+	s.buildLinkIndex()
+	errs, _, hints := s.collectLinkProblems()
+	reportProblems(errs, hints)
 
 	// Search: Pagefind only indexes HTML on disk, so the in-memory pages are
 	// mirrored to a temp site dir; the bundle is served from there. Indexing
@@ -155,7 +163,8 @@ func (s *Site) Serve(addr string) error {
 			if err != nil {
 				fmt.Fprintln(os.Stderr, "search reindex:", err, "-- search disabled")
 			} else {
-				fmt.Printf("search indexed in %v\n", time.Since(start).Round(time.Millisecond))
+				fmt.Println(paint(os.Stdout, ansiGray,
+					fmt.Sprintf("search indexed in %v", time.Since(start).Round(time.Millisecond))))
 			}
 			indexed <- err == nil
 		}
@@ -386,17 +395,40 @@ func (s *Site) Serve(addr string) error {
 					}
 					loaded[rel] = next
 				}
+				warned := 0 // warnings this save reported, to color the rebuilt line
 				if full {
+					// The pages this rebuild moves, for the check that follows:
+					// the saved pages, the hosts of the saved inlined fragments,
+					// whose body they write into, and the pages joining the build.
+					oldPages := map[string]bool{}
+					for rel := range s.Pages {
+						oldPages[rel] = true
+					}
 					if err := s.BuildAll(); err != nil {
 						fmt.Fprintln(os.Stderr, "rebuild:", err)
 						continue
 					}
+					checked := map[string]bool{}
+					for rel := range changed {
+						if _, ok := s.Pages[rel]; ok {
+							checked[rel] = true
+						}
+						for _, host := range s.includeReferrerAll(rel) {
+							checked[host] = true
+						}
+					}
+					for rel := range s.Pages {
+						if !oldPages[rel] {
+							checked[rel] = true
+						}
+					}
+					// A page the rebuild dropped leaves its targeters with broken
+					// links; report them from the index the rebuild just replaced.
+					warned += reportProblems(leftProblems(s.buildLinkIndex(), checked), nil)
 					if err := rebuild(); err != nil {
 						fmt.Fprintln(os.Stderr, "wrap:", err)
 					}
-					// A new page takes this branch, and it is the page whose
-					// reachability the author most wants told.
-					s.checkChanged(changed)
+					warned += reportProblems(s.checkChanged(checked))
 				} else {
 					for _, p := range loaded {
 						if err := publish(p); err != nil {
@@ -408,7 +440,7 @@ func (s *Site) Serve(addr string) error {
 							rebuildPage(ref)
 						}
 					}
-					s.checkChanged(changed)
+					warned += reportProblems(s.checkChanged(changed))
 				}
 				what := "all"
 				if why != "" {
@@ -425,7 +457,12 @@ func (s *Site) Serve(addr string) error {
 						what = fmt.Sprintf("%s (+%d more)", strings.Join(names[:3], ", "), len(names)-3)
 					}
 				}
-				fmt.Printf("rebuilt %s in %v\n", what, time.Since(start).Round(time.Millisecond))
+				code := ansiGreen
+				if warned > 0 {
+					code = ansiYellow
+				}
+				fmt.Println(paint(os.Stdout, code,
+					fmt.Sprintf("rebuilt %s in %v", what, time.Since(start).Round(time.Millisecond))))
 				// Reload now; search catches up when the index run lands.
 				if full {
 					broadcast(nil) // the nav moved on every page, and every page can link a new one
@@ -479,30 +516,226 @@ func noStore(h http.Handler) http.Handler {
 	})
 }
 
-// checkChanged runs the link check on just-rebuilt pages without killing the server
-// on a failure, and recomputes reachability because it depends on every page.
-func (s *Site) checkChanged(changed map[string]bool) {
+// pageLink is one author link from a page to another, recorded in the dev
+// server's 2-way link index. from and to are the source and target pages'
+// source-relative paths, frag is the fragment the link names ("" for none), and
+// href is the link as written, for reporting.
+type pageLink struct {
+	from string
+	to   string
+	frag string
+	href string
+}
+
+// pageLinks lists the page links in p's rendered body: the links to other pages,
+// with the fragment each names. Assets and external URLs carry no page target,
+// and the body is scanned unwrapped, since the chrome the wrap adds links pages
+// by construction and would make every nav page look linked.
+func (s *Site) pageLinks(p *Page, byOut map[string]*Page) []pageLink {
+	var out []pageLink
+	for _, m := range hrefRe.FindAllStringSubmatch(string(p.Raw), -1) {
+		t, frag, ok := s.resolveHref(p.Rel, m[1], byOut)
+		if !ok || t == nil {
+			continue
+		}
+		out = append(out, pageLink{from: p.Rel, to: t.Rel, frag: frag, href: m[1]})
+	}
+	return out
+}
+
+// buildLinkIndex (re)builds the 2-way link index from the current pages and
+// returns the links the old index held to a page no longer in the build, which a
+// full rebuild just orphaned.
+func (s *Site) buildLinkIndex() []pageLink {
+	var dropped []pageLink
+	for _, ls := range s.links {
+		for _, l := range ls {
+			if _, fromOK := s.Pages[l.from]; !fromOK {
+				continue // the source is gone too; nothing left to report
+			}
+			if _, toOK := s.Pages[l.to]; !toOK {
+				dropped = append(dropped, l)
+			}
+		}
+	}
+	s.links = map[string][]pageLink{}
+	s.revLinks = map[string][]pageLink{}
 	byOut := map[string]*Page{}
 	for _, p := range s.Pages {
 		byOut[p.OutPath] = p
 	}
-	reasons := s.orphanReasons(byOut)
+	for rel, p := range s.Pages {
+		links := s.pageLinks(p, byOut)
+		s.links[rel] = links
+		for _, l := range links {
+			s.revLinks[l.to] = append(s.revLinks[l.to], l)
+		}
+	}
+	return dropped
+}
+
+// updateLinksFor re-indexes rel's outgoing page links: its old links are pulled
+// from the pages they pointed at, and its new ones, read from the just
+// re-rendered body, are filed under their targets. The caller has already put the
+// new page in s.Pages.
+func (s *Site) updateLinksFor(rel string) {
+	for _, l := range s.links[rel] {
+		s.revLinks[l.to] = removeLink(s.revLinks[l.to], l)
+	}
+	delete(s.links, rel)
+	p := s.Pages[rel]
+	if p == nil {
+		return
+	}
+	byOut := map[string]*Page{}
+	for _, q := range s.Pages {
+		byOut[q.OutPath] = q
+	}
+	newLinks := s.pageLinks(p, byOut)
+	s.links[rel] = newLinks
+	for _, l := range newLinks {
+		s.revLinks[l.to] = append(s.revLinks[l.to], l)
+	}
+}
+
+// dropPageLinks forgets rel from the link index, for a page leaving the build:
+// its outgoing links are pulled from the pages they pointed at, and the links
+// that pointed at it are dropped, since their target is gone.
+func (s *Site) dropPageLinks(rel string) {
+	for _, l := range s.links[rel] {
+		s.revLinks[l.to] = removeLink(s.revLinks[l.to], l)
+	}
+	delete(s.links, rel)
+	delete(s.revLinks, rel)
+}
+
+// removeLink drops the first entry equal to want from links.
+func removeLink(links []pageLink, want pageLink) []pageLink {
+	out := make([]pageLink, 0, len(links))
+	for _, l := range links {
+		if l != want {
+			out = append(out, l)
+		}
+	}
+	return out
+}
+
+// ANSI colors for the dev server's terminal output. A colored line always ends
+// in reset, so its color never leaks into the next one.
+const (
+	ansiReset  = "\x1b[0m"
+	ansiGray   = "\x1b[90m"
+	ansiGreen  = "\x1b[32m"
+	ansiYellow = "\x1b[33m"
+)
+
+// colorable reports whether a stream should carry ANSI color: it is a terminal
+// (a character device, the same test notice() uses) and the user has not set
+// NO_COLOR. Piped and redirected output stays plain.
+func colorable(f *os.File) bool {
+	if os.Getenv("NO_COLOR") != "" {
+		return false
+	}
+	fi, err := f.Stat()
+	return err == nil && fi.Mode()&os.ModeCharDevice != 0
+}
+
+// paint wraps s in an ANSI color when colorable(f) holds, leaving it bare
+// otherwise.
+func paint(f *os.File, code, s string) string {
+	if !colorable(f) {
+		return s
+	}
+	return code + s + ansiReset
+}
+
+// reportProblems prints a render's gate errors and rewrite hints on the
+// terminal, the way the dev server surfaces what a build --check would flag.
+// It returns how many warnings it printed, so the caller can color the
+// rebuilt line that follows.
+func reportProblems(errs, hints []string) int {
+	for _, e := range errs {
+		fmt.Fprintln(os.Stderr, paint(os.Stderr, ansiYellow, "warning: "+e))
+	}
+	for _, h := range hints {
+		fmt.Fprintln(os.Stderr, paint(os.Stderr, ansiYellow, "hint: "+h))
+	}
+	return len(errs)
+}
+
+// leftProblems names the broken links a full rebuild orphaned: the links the
+// dropped pages' targeters kept to them. It skips the changed pages, whose own
+// links checkChanged's pageProblems already covers.
+func leftProblems(dropped []pageLink, changed map[string]bool) []string {
+	seen := map[string]bool{}
+	var errs []string
+	for _, l := range dropped {
+		if changed[l.from] {
+			continue
+		}
+		e := fmt.Sprintf("%s: broken link %s", l.from, l.href)
+		if seen[e] {
+			continue
+		}
+		seen[e] = true
+		errs = append(errs, e)
+	}
+	return errs
+}
+
+// checkChanged computes the problems a render just introduced, without walking
+// the site: the gate errors of the re-rendered pages, and the broken fragment
+// targets the pages that point at them, read from the 2-way link index.
+// Problems in pages this render did not touch are build --check's to report.
+func (s *Site) checkChanged(changed map[string]bool) (errs, hints []string) {
+	byOut := map[string]*Page{}
+	for _, p := range s.Pages {
+		byOut[p.OutPath] = p
+	}
+	seenErr := map[string]bool{}
+	seenHint := map[string]bool{}
+	addErr := func(msg string) {
+		if !seenErr[msg] {
+			seenErr[msg] = true
+			errs = append(errs, msg)
+		}
+	}
+	addHint := func(msg string) {
+		if !seenHint[msg] {
+			seenHint[msg] = true
+			hints = append(hints, msg)
+		}
+	}
+	rels := make([]string, 0, len(changed))
 	for rel := range changed {
+		rels = append(rels, rel)
+	}
+	sort.Strings(rels)
+	for _, rel := range rels {
 		p, ok := s.Pages[rel]
 		if !ok {
 			continue
 		}
-		if msg, ok := reasons[rel]; ok {
-			fmt.Fprintln(os.Stderr, "check:", rel+": "+msg)
+		e, h := s.pageProblems(p, byOut)
+		for _, x := range e {
+			addErr(x)
 		}
-		errs, hints := s.pageProblems(p, byOut)
-		for _, e := range errs {
-			fmt.Fprintln(os.Stderr, "check:", e)
+		for _, x := range h {
+			addHint(x)
 		}
-		for _, h := range hints {
-			fmt.Fprintln(os.Stderr, "hint:", h)
+		// the pages that point at this one now link its new ids, and a heading
+		// this save moved leaves them a missing anchor behind
+		for _, l := range s.revLinks[rel] {
+			if l.frag == "" || p.IDs[l.frag] {
+				continue
+			}
+			addErr(fmt.Sprintf("%s: missing anchor %s", l.from, l.href))
+			if cand := closestSlug(p.IDs, l.frag); cand != "" {
+				addHint(fmt.Sprintf("%s: %s -> %s", l.from, l.href, cand))
+			}
 		}
 	}
+	return errs, hints
 }
 
 // renderedKey maps a URL path to its key in the rendered-page map, which the

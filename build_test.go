@@ -534,6 +534,191 @@ func TestAnchorTargetsAndDashRewrites(t *testing.T) {
 	}
 }
 
+// closestSlug names the id a broken fragment most likely meant, by edit
+// distance, and stays silent when no id is close enough, so a wrong guess is
+// never suggested.
+func TestClosestSlug(t *testing.T) {
+	ids := map[string]bool{
+		"notes":         true,
+		"foo-bar--baz":  true,
+		"upgrade-notes": true,
+		"installation":  true,
+		"my-section":    true,
+		"one":           true,
+		"kept-steps":    true,
+	}
+	for frag, want := range map[string]string{
+		"foo-bar-baz":  "foo-bar--baz",  // the hyphen run the old slug dropped
+		"upgrde-notes": "upgrade-notes", // one letter out of place
+		"MySection":    "my-section",    // case is folded; a dash apart
+		"install":      "installation",  // a truncated fragment
+		"zzz":          "",              // no id within half its length
+		"":             "",
+	} {
+		if got := closestSlug(ids, frag); got != want {
+			t.Errorf("closestSlug(%q) = %q, want %q", frag, got, want)
+		}
+	}
+}
+
+// A save that moves a heading breaks the fragments other pages point at, and the
+// dev server must name them without re-checking the site: the saved page's own
+// links, and the links its targeters keep to it, from the 2-way link index.
+func TestCheckChangedSaversAndTargeters(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "source")
+	const (
+		indexSrc = "---\nnav: list\n---\n\n# Home\n\n- [Notes](notes.md)\n\n" +
+			"[Setup](notes.md#install-steps) and [upgrade](notes.md#upgrade-notes).\n"
+		notesSrc = "# Notes\n\n## Install steps\n\nProse.\n\n## Upgrade notes\n\nProse.\n"
+	)
+	for rel, body := range map[string]string{"index.md": indexSrc, "notes.md": notesSrc} {
+		p := filepath.Join(src, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(dir, "colophon.conf"), []byte("source: source\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s, err := NewSite(filepath.Join(dir, "colophon.conf"), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.BuildAll(); err != nil {
+		t.Fatal(err)
+	}
+	s.buildLinkIndex()
+	save := func(body string) (errs, hints []string) {
+		p := s.renderPage("notes.md", body)
+		s.Pages["notes.md"] = p
+		s.finalize(p)
+		s.updateLinksFor("notes.md")
+		return s.checkChanged(map[string]bool{"notes.md": true})
+	}
+	// A save that moves no heading warns nothing.
+	if errs, hints := save(notesSrc); len(errs) != 0 || len(hints) != 0 {
+		t.Errorf("clean save reported problems: errs=%v hints=%v", errs, hints)
+	}
+	// The far rename breaks its targeter, with no id close enough to suggest.
+	if errs, hints := save(strings.Replace(notesSrc, "## Install steps", "## Rolling deploy", 1)); len(errs) != 1 || errs[0] != "index.md: missing anchor notes.html#install-steps" || len(hints) != 0 {
+		t.Errorf("far rename: errs=%v hints=%v", errs, hints)
+	}
+	// The close rename breaks its targeter, with the slug to write instead.
+	if errs, hints := save(strings.Replace(notesSrc, "## Upgrade notes", "## Upgrade note", 1)); len(errs) != 1 || errs[0] != "index.md: missing anchor notes.html#upgrade-notes" ||
+		len(hints) != 1 || hints[0] != "index.md: notes.html#upgrade-notes -> upgrade-note" {
+		t.Errorf("close rename: errs=%v hints=%v", errs, hints)
+	}
+}
+
+// Saving an inlined fragment moves the headings of the page that hosts it, and
+// the fragments other pages point at that host can break; the host is the page
+// the full rebuild has to check, not the fragment file it is not.
+func TestCheckChangedInlinedFragmentHosts(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "source")
+	pages := map[string]string{
+		"index.md": "---\nnav: list\n---\n\n# Home\n\n- [One](one.md)\n\n" +
+			"The [steps](one.md#kept-steps) are inlined.\n",
+		"one.md":     "# One\n\n<!--colophon:include inlined.md-->\n",
+		"inlined.md": "---\nfragment: true\n---\n\n# Kept steps\n\nProse.\n",
+	}
+	for rel, body := range pages {
+		p := filepath.Join(src, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(dir, "colophon.conf"), []byte("source: source\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s, err := NewSite(filepath.Join(dir, "colophon.conf"), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.BuildAll(); err != nil {
+		t.Fatal(err)
+	}
+	if len(s.Pages) != 2 {
+		t.Fatalf("built %d pages, want 2 (the fragment is inlined, not built): %v", len(s.Pages), rels(s))
+	}
+	s.buildLinkIndex()
+	// The fragment is saved with its heading renamed, and the full rebuild the
+	// watcher runs re-renders the site in its place.
+	if err := os.WriteFile(filepath.Join(src, "inlined.md"),
+		[]byte("---\nfragment: true\n---\n\n# Kept phase\n\nProse.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.BuildAll(); err != nil {
+		t.Fatal(err)
+	}
+	s.buildLinkIndex()
+	// The host is the page the rebuild moved, and its targeters' fragments are
+	// checked against its new ids.
+	errs, hints := s.checkChanged(map[string]bool{"one.md": true})
+	if len(errs) != 1 || errs[0] != "index.md: missing anchor one.html#kept-steps" {
+		t.Errorf("host rename: errs=%v", errs)
+	}
+	if len(hints) != 1 || hints[0] != "index.md: one.html#kept-steps -> kept-phase" {
+		t.Errorf("host rename: hints=%v", hints)
+	}
+}
+
+// A page leaving the build orphans the links its targeters keep to it; the full
+// rebuild reports them from the index it replaces, because the targeters are not
+// among the pages it re-checked.
+func TestLeftProblemsReportDroppedTargets(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "source")
+	const (
+		indexSrc = "---\nnav: list\n---\n\n# Home\n\n- [Notes](notes.md)\n\n" +
+			"The [upgrade](notes.md#upgrade-notes) covers the rename.\n"
+		notesSrc = "# Notes\n\n## Upgrade notes\n\nProse.\n"
+	)
+	for rel, body := range map[string]string{"index.md": indexSrc, "notes.md": notesSrc} {
+		p := filepath.Join(src, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(dir, "colophon.conf"), []byte("source: source\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s, err := NewSite(filepath.Join(dir, "colophon.conf"), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.BuildAll(); err != nil {
+		t.Fatal(err)
+	}
+	s.buildLinkIndex()
+	// notes.md leaves the build, as the full rebuild a file deletion runs leaves
+	// it: gone from s.Pages, and the index rebuilt in its place.
+	delete(s.Pages, "notes.md")
+	errs := leftProblems(s.buildLinkIndex(), map[string]bool{"notes.md": true})
+	joined := strings.Join(errs, "\n")
+	for _, want := range []string{
+		"index.md: broken link notes.html",
+		"index.md: broken link notes.html#upgrade-notes",
+	} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("dropped target not reported %q, got:\n%s", want, joined)
+		}
+	}
+	if len(errs) != 2 {
+		t.Errorf("got %d problems, want 2:\n%s", len(errs), joined)
+	}
+}
+
 // A link to a section of a page reads like a nav entry to its author, but a `nav: list`
 // page takes children only from items that are one plain page link, so the item leaves
 // the whole list as prose and the pages beside it lose their breadcrumbs, their sidebar

@@ -87,6 +87,16 @@ type Site struct {
 	logoSrc     string // source-relative name of the file each URL above was digested from
 	logoDarkSrc string
 	faviconSrc  string
+
+	// The dev server's 2-way link index over author links, read off each page's
+	// rendered body (p.Raw) rather than the wrapped page, so it tracks what the
+	// corpus links, not the chrome the wrap adds. links[rel] is rel's outgoing
+	// page links; revLinks[rel] is the page links that point at rel. checkChanged
+	// reads revLinks to report a save's broken fragment targets without re-scanning
+	// the whole site. Built at boot and maintained by the watcher goroutine, the
+	// sole mutator, as for s.Pages.
+	links    map[string][]pageLink
+	revLinks map[string][]pageLink
 }
 
 // loadConf reads the flat "key: value" site config (same dialect as page

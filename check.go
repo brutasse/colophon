@@ -13,8 +13,7 @@ import (
 )
 
 var (
-	hrefRe    = regexp.MustCompile(`href="([^"]*)"`)
-	dashRunRe = regexp.MustCompile(`-{2,}`)
+	hrefRe = regexp.MustCompile(`href="([^"]*)"`)
 	// source-level scans for the link-portability contract; assetProblems also reads
 	// rawAttrRe off a rendered body, for the file-existence rule
 	mdDestRe  = regexp.MustCompile(`\]\(([^)\s]+)(?:\s+"[^"]*")?\)`)
@@ -266,11 +265,9 @@ func (s *Site) assetProblems(p *Page) (errs []string) {
 }
 
 // pageProblems checks every internal link on a wrapped page. It returns
-// hard errors plus "rewrite hints": for a missing anchor whose fragment
-// matches a real one once hyphen runs are collapsed on both sides, the
-// fragment to write instead. petroglyph builds ids the way GitHub does, so a
-// fragment carried over from the old collapsing slug differs from the target
-// only by those runs.
+// hard errors plus "rewrite hints": for a missing anchor, the id the target
+// page actually carries when one is close enough to the fragment to be the
+// one it meant, which closestSlug finds by edit distance.
 func (s *Site) pageProblems(p *Page, byOut map[string]*Page) (errs, hints []string) {
 	errs = append(errs, s.styleProblems(p, byOut)...)
 	errs = append(errs, emptyLinkProblems(p)...)
@@ -302,12 +299,10 @@ func (s *Site) pageProblems(p *Page, byOut map[string]*Page) (errs, hints []stri
 		if frag == "" || target.IDs[frag] {
 			continue
 		}
-		if cand := dashRunRe.ReplaceAllString(frag, "-"); target.IDs[cand] {
-			hints = append(hints, fmt.Sprintf("%s: %s -> %s", p.Rel, href, cand))
-		} else if cand := dashCollapseHint(target, frag); cand != "" {
+		errs = append(errs, fmt.Sprintf("%s: missing anchor %s", p.Rel, href))
+		if cand := closestSlug(target.IDs, frag); cand != "" {
 			hints = append(hints, fmt.Sprintf("%s: %s -> %s", p.Rel, href, cand))
 		}
-		errs = append(errs, fmt.Sprintf("%s: missing anchor %s", p.Rel, href))
 	}
 	return errs, hints
 }
@@ -331,23 +326,68 @@ func emptyLinkProblems(p *Page) (errs []string) {
 	return errs
 }
 
-// dashCollapseHint names the fragment on target that a collapsed fragment was
-// meant to reach: "#foo-bar-baz" against the id "foo-bar--baz". It stays quiet
-// when more than one id would match, because then there is no single fragment
-// to suggest.
-func dashCollapseHint(target *Page, frag string) string {
-	want := dashRunRe.ReplaceAllString(frag, "-")
-	found := ""
-	for id := range target.IDs {
-		if id == frag || dashRunRe.ReplaceAllString(id, "-") != want {
+// closestSlug names the id on the page that a broken fragment most likely
+// meant: the id within half its own length in edits of the fragment, case
+// folded, and of those the nearest. It stays silent when no id is close enough,
+// so a wrong guess is never printed. A fragment that differs from a real id
+// only by a run of hyphens is one edit away, so the old dash-collapse case is a
+// special case of this.
+func closestSlug(ids map[string]bool, frag string) string {
+	want := strings.ToLower(frag)
+	if want == "" {
+		return ""
+	}
+	best := ""
+	bestDist := -1
+	for id := range ids {
+		have := strings.ToLower(id)
+		maxLen := len(have)
+		if len(want) > maxLen {
+			maxLen = len(want)
+		}
+		if maxLen == 0 {
 			continue
 		}
-		if found != "" && found != id {
-			return ""
+		d := levenshtein(want, have)
+		if 2*d > maxLen {
+			continue
 		}
-		found = id
+		if bestDist < 0 || d < bestDist || (d == bestDist && id < best) {
+			best, bestDist = id, d
+		}
 	}
-	return found
+	return best
+}
+
+// levenshtein is the edit distance between a and b: the insertions, deletions
+// and substitutions that turn a into b.
+func levenshtein(a, b string) int {
+	if a == b {
+		return 0
+	}
+	if len(a) == 0 {
+		return len(b)
+	}
+	if len(b) == 0 {
+		return len(a)
+	}
+	prev := make([]int, len(b)+1)
+	for j := range prev {
+		prev[j] = j
+	}
+	for i := 1; i <= len(a); i++ {
+		cur := make([]int, len(b)+1)
+		cur[0] = i
+		for j := 1; j <= len(b); j++ {
+			cost := 1
+			if a[i-1] == b[j-1] {
+				cost = 0
+			}
+			cur[j] = min(cur[j-1]+1, prev[j]+1, prev[j-1]+cost)
+		}
+		prev = cur
+	}
+	return prev[len(b)]
 }
 
 // inNav reports whether rel is in the nav tree built from the root index's
@@ -492,7 +532,7 @@ func (s *Site) RunCheck() {
 	}
 	if len(hints) > 0 {
 		sort.Strings(hints)
-		fmt.Println("  dash-collapse rewrites (old fragment -> new slug):")
+		fmt.Println("  closest-slug rewrites (broken fragment -> closest id):")
 		seen := map[string]bool{}
 		for _, h := range hints {
 			if !seen[h] {

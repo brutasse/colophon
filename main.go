@@ -87,7 +87,7 @@ func main() {
 
 	serve := &cobra.Command{
 		Use:   "serve",
-		Short: "Dev server: rebuild changed pages, report their problems on each save",
+		Short: "Dev server: rebuild changed pages, report the problems each save introduces",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			addr, _ := cmd.Flags().GetString("http")

@@ -383,7 +383,11 @@ bundle, as uncacheable. Nothing a rebuild can change survives a reload.
   page title, a `nav: list`, a top-level section, a `fragment:` declaration, the logo
   or favicon, or a page joining or leaving the build. The line that says so names
   which, and a save that only rewrites prose rebuilds its own page,
-- the checker reports the problems of each saved file on the terminal,
+- the checker reports on the terminal the problems a save introduces: the saved
+  pages' broken links and anchors, and the broken anchors the pages that link to
+  them now point at. The first render reports everything `build --check` would
+  fail on instead, so a site that does not pass it says so before the first
+  reload,
 - Pagefind indexes a mirror of the pages in the background, so a reload never
   waits on search.
 
