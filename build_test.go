@@ -1252,6 +1252,58 @@ func TestBuiltPageScriptTags(t *testing.T) {
 	})
 }
 
+// TestSearchEngine asks the browser search engine the site registers when it is
+// indexed and its base-url is set: the head of every page names the plugin, the
+// plugin itself sits at the site root, and a build that stops answering search
+// takes both off again.
+func TestSearchEngine(t *testing.T) {
+	out, s := buildFixture(t, "site", "")
+
+	// The fixture build does not run the indexer, so Search is off: no engine to
+	// register, and the head names no plugin.
+	wantNot(t, "index.html", readPage(t, out, "index.html"), `rel="search"`, "PagefindComponents")
+	if exists(out, "opensearch.xml") {
+		t.Error("a search-off build wrote opensearch.xml")
+	}
+
+	s.Search = true
+	if err := s.WriteOut(out); err != nil {
+		t.Fatalf("WriteOut with search on: %v", err)
+	}
+
+	want(t, "index.html", readPage(t, out, "index.html"),
+		`<link rel="search" type="application/opensearchdescription+xml" title="Colophon test site" href="opensearch.xml">`,
+		`components.getInstanceManager().getInstance("default")`, // the ?q= handler, present on every page search reaches
+	)
+	// A deep page walks back to the root like every chrome URL, so the plugin
+	// resolves the same way from there.
+	want(t, "guide/first.html", readPage(t, out, "guide/first.html"),
+		`href="../opensearch.xml"`,
+		`components.getInstanceManager().getInstance("default")`,
+	)
+
+	xml := readPage(t, out, "opensearch.xml")
+	want(t, "opensearch.xml", xml,
+		`<ShortName>Colophon test site</ShortName>`,
+		`<Description>Search Colophon test site</Description>`,
+		`template="https://docs.example.test/index.html?q={searchTerms}"`,
+		fmt.Sprintf(`<Image width="16" height="16" type="image/svg+xml">https://docs.example.test/%s</Image>`, s.Favicon),
+	)
+
+	// A build that stops answering search takes the engine off: the head's link
+	// goes with Search, and the plugin file goes too, because a browser
+	// auto-detects that path on its own, so a stale file would register a search
+	// the site no longer answers.
+	s.Search = false
+	if err := s.WriteOut(out); err != nil {
+		t.Fatalf("WriteOut with search off: %v", err)
+	}
+	wantNot(t, "index.html", readPage(t, out, "index.html"), `rel="search"`, "PagefindComponents")
+	if exists(out, "opensearch.xml") {
+		t.Error("opensearch.xml survived a search-off build")
+	}
+}
+
 // Goes through WriteAssets rather than checkASCII alone: the vendored scripts hold
 // literal glyphs and have to stay outside the rule.
 func TestWriteAssetsRefusesNonASCIIScripts(t *testing.T) {

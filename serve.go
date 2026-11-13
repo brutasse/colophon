@@ -201,6 +201,18 @@ func (s *Site) Serve(addr string) error {
 
 	mux := http.NewServeMux()
 	mux.Handle("/pagefind/", noStore(http.FileServer(http.Dir(siteDir))))
+	mux.HandleFunc("/opensearch.xml", func(w http.ResponseWriter, r *http.Request) {
+		// Generated, not served from source: the template URL names the base-url
+		// the config holds, and a search the site stops answering must 404, not
+		// register.
+		if !s.SearchEngine() {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/opensearchdescription+xml; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-store")
+		w.Write(s.openSearchXML())
+	})
 	mux.HandleFunc("/reload", func(w http.ResponseWriter, r *http.Request) {
 		// Same-origin requests only: Accept compares the Origin against r.Host,
 		// which is the whole access-control story for a loopback dev server.

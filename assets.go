@@ -190,25 +190,26 @@ func (s *Site) writeStatics(out string) error {
 }
 
 type pageData struct {
-	Title     string
-	SiteTitle string
-	Prefix    string // the page's path back to the site root, prepended to every chrome URL
-	Copyright string
-	EditBase  string
-	Logo      string
-	LogoDark  string
-	Favicon   string
-	Content   template.HTML
-	Sidebar   template.HTML
-	Crumbs    template.HTML
-	TOC       template.HTML
-	AccentCSS template.CSS
-	Search    bool
-	PrevNext  template.HTML
-	Math      bool
-	Mermaid   bool
-	Dev       bool
-	EditPath  string
+	Title        string
+	SiteTitle    string
+	Prefix       string // the page's path back to the site root, prepended to every chrome URL
+	Copyright    string
+	EditBase     string
+	Logo         string
+	LogoDark     string
+	Favicon      string
+	Content      template.HTML
+	Sidebar      template.HTML
+	Crumbs       template.HTML
+	TOC          template.HTML
+	AccentCSS    template.CSS
+	Search       bool
+	SearchEngine bool
+	PrevNext     template.HTML
+	Math         bool
+	Mermaid      bool
+	Dev          bool
+	EditPath     string
 }
 
 // WriteAssets extracts the embedded assets (css, vendored mermaid/MathJax) into

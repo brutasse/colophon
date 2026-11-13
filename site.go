@@ -56,6 +56,7 @@ type Site struct {
 	HomeLabel  string // opening breadcrumb text
 	EditBase   string
 	BaseHost   string // host of base-url, for detecting self-referential links
+	BaseURL    string // base-url with scheme, no trailing slash; the engine's template URL is built on it
 	Copyright  string // "{year}" already substituted; empty = no footer line
 	Logo       string // content-addressed URL; empty = brand is the site title text
 	LogoDark   string // same, shown in place of Logo by the dark theme blocks
@@ -209,7 +210,12 @@ func NewSite(confPath, tagsCSV string) (*Site, error) {
 	}
 	s.policy = docsPolicy(hosts)
 	if v := conf["base-url"]; v != "" {
-		h := strings.TrimSuffix(strings.TrimPrefix(strings.TrimPrefix(v, "https://"), "http://"), "/")
+		u := v
+		if !strings.HasPrefix(u, "http://") && !strings.HasPrefix(u, "https://") {
+			u = "https://" + u
+		}
+		s.BaseURL = strings.TrimSuffix(u, "/")
+		h := strings.TrimPrefix(strings.TrimPrefix(u, "https://"), "http://")
 		s.BaseHost = strings.SplitN(h, "/", 2)[0]
 	}
 	if v := conf["tags"]; v != "" {
@@ -236,6 +242,11 @@ func NewSite(confPath, tagsCSV string) (*Site, error) {
 	}
 	return s, nil
 }
+
+// SearchEngine reports whether the site registers itself as a browser search
+// engine: the pages must be indexed for the search to answer, and base-url must
+// name the absolute URL the engine's template searches.
+func (s *Site) SearchEngine() bool { return s.Search && s.BaseURL != "" }
 
 // upstreamOwned reports whether rel lives under a tag-declared subtree,
 // whose content is synced from upstream repos and not ours to restyle.
