@@ -14,7 +14,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 export const repoRoot = path.resolve(here, '..', '..');
 export const siteRoot = path.join(repoRoot, '_build', 'site');
 
-function requireBuilt(rel) {
+export function requireBuilt(rel) {
   if (!existsSync(siteRoot)) {
     throw new Error(`no built site at ${siteRoot}; run
     go run . build --config testdata/site/colophon.conf --out _build/site`);

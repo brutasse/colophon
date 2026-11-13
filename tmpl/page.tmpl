@@ -6,6 +6,7 @@
 <script>if (localStorage.theme) document.documentElement.dataset.theme = localStorage.theme;</script>
 <title>{{.Title}} · {{.SiteTitle}}</title>
 {{if .Favicon}}<link rel="icon" href="{{.Prefix}}{{.Favicon}}">{{end}}
+{{if .SearchEngine}}<link rel="search" type="application/opensearchdescription+xml" title="{{.SiteTitle}}" href="{{.Prefix}}opensearch.xml">{{end}}
 {{if .Search}}<link rel="stylesheet" href="{{.Prefix}}pagefind/pagefind-component-ui.css">{{end}}
 <link rel="stylesheet" href="{{.Prefix}}{{asset "docs.css"}}">
 <link rel="stylesheet" href="{{.Prefix}}{{asset "chroma.css"}}">
@@ -14,6 +15,31 @@
      loaded from, and a module script does not expose one. Loaded classic from a
      page-relative src, search resolves from any deploy path and at any page depth. */}}
 <script defer src="{{.Prefix}}pagefind/pagefind-component-ui.js"></script>{{end}}
+{{if .Search}}<script>
+/* A search from the URL bar lands on any page with ?q=: the page answers it by
+   opening the search modal, the same overlay the sidebar trigger opens, with the
+   query pre-filled. Every search — that one, and the ones typed into the modal —
+   is written to the URL, so a search is shareable as a link; closing the modal
+   clears the query, the reset-on-close attribute doing the triggerSearch("").
+   Deferred scripts finish before DOMContentLoaded, so the bundle is loaded by the
+   time the handler runs. */
+document.addEventListener("DOMContentLoaded", function () {
+  var components = window.PagefindComponents;
+  if (!components) return;
+  var instance = components.getInstanceManager().getInstance("default");
+  instance.on("search", function (term) {
+    history.replaceState(history.state, "", location.pathname + (term ? "?q=" + encodeURIComponent(term) : ""));
+  });
+  var q = new URLSearchParams(location.search).get("q");
+  var modal = document.querySelector("pagefind-modal");
+  if (q && modal) {
+    // The search runs while the input is not yet focused: the bundle's sync hook
+    // skips the value write while the input is focused, and open() focuses it.
+    instance.triggerSearch(q);
+    modal.open();
+  }
+});
+</script>{{end}}
 {{if .Math}}<script>window.MathJax = {tex: {inlineMath: [["\\(", "\\)"]], displayMath: [["\\[", "\\]"]]}, options: {skipHtmlTags: ["script","noscript","style","textarea","pre","code"]}};</script>
 <script defer src="{{.Prefix}}{{asset "vendor/tex-svg.js"}}"></script>{{end}}
 {{if .Mermaid}}<script defer src="{{.Prefix}}{{asset "vendor/mermaid.min.js"}}"></script>{{end}}

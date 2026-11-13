@@ -1,11 +1,14 @@
 package main
 
 import (
+	"bytes"
+	"encoding/xml"
 	"fmt"
 	"html"
 	"html/template"
 	"io"
 	"maps"
+	"mime"
 	"os"
 	"path"
 	"path/filepath"
@@ -311,25 +314,26 @@ func (s *Site) accentCSS() string {
 
 func (s *Site) wrapPage(p *Page) ([]byte, error) {
 	data := pageData{
-		Title:     p.Title,
-		SiteTitle: s.SiteTitle,
-		Prefix:    p.Prefix,
-		Copyright: s.Copyright,
-		EditBase:  s.EditBase,
-		Logo:      s.Logo,
-		LogoDark:  s.LogoDark,
-		Favicon:   s.Favicon,
-		Content:   template.HTML(p.Body),
-		Sidebar:   template.HTML(s.renderSidebar(p)),
-		Crumbs:    template.HTML(s.renderCrumbs(p)),
-		TOC:       template.HTML(s.renderTOC(p)),
-		AccentCSS: template.CSS(s.accentCSS()),
-		Search:    s.Search,
-		PrevNext:  template.HTML(s.renderPrevNext(p)),
-		Math:      p.Flags.Math,
-		Mermaid:   p.Flags.Mermaid,
-		Dev:       s.Dev,
-		EditPath:  p.Rel,
+		Title:        p.Title,
+		SiteTitle:    s.SiteTitle,
+		Prefix:       p.Prefix,
+		Copyright:    s.Copyright,
+		EditBase:     s.EditBase,
+		Logo:         s.Logo,
+		LogoDark:     s.LogoDark,
+		Favicon:      s.Favicon,
+		Content:      template.HTML(p.Body),
+		Sidebar:      template.HTML(s.renderSidebar(p)),
+		Crumbs:       template.HTML(s.renderCrumbs(p)),
+		TOC:          template.HTML(s.renderTOC(p)),
+		AccentCSS:    template.CSS(s.accentCSS()),
+		Search:       s.Search,
+		SearchEngine: s.SearchEngine(),
+		PrevNext:     template.HTML(s.renderPrevNext(p)),
+		Math:         p.Flags.Math,
+		Mermaid:      p.Flags.Mermaid,
+		Dev:          s.Dev,
+		EditPath:     p.Rel,
 	}
 	var buf strings.Builder
 	if err := pageT.Execute(&buf, data); err != nil {
@@ -338,8 +342,55 @@ func (s *Site) wrapPage(p *Page) ([]byte, error) {
 	return []byte(buf.String()), nil
 }
 
+// openSearchXML is the browser search plugin colophon publishes at the site root
+// and the head's link rel="search" names. The template URL is the index page with
+// a query, which the page answers as its search; the icon is the favicon the
+// config publishes under /_assets/, which an engine list reads without the page.
+func (s *Site) openSearchXML() []byte {
+	b := &bytes.Buffer{}
+	b.WriteString(`<?xml version="1.0" encoding="UTF-8"?>` + "\n")
+	b.WriteString(`<OpenSearchDescription xmlns="http://a9.com/-/spec/opensearch/1.1/">` + "\n")
+	b.WriteString("<ShortName>")
+	xml.EscapeText(b, []byte(s.SiteTitle))
+	b.WriteString("</ShortName>\n<Description>Search ")
+	xml.EscapeText(b, []byte(s.SiteTitle))
+	b.WriteString("</Description>\n")
+	b.WriteString(`<Url type="text/html" method="get" template="`)
+	xml.EscapeText(b, []byte(s.BaseURL+"/index.html?q={searchTerms}"))
+	b.WriteString("\"/>\n")
+	if s.Favicon != "" {
+		b.WriteString(`<Image width="16" height="16"`)
+		if ct := mime.TypeByExtension(path.Ext(s.Favicon)); ct != "" {
+			b.WriteString(` type="`)
+			xml.EscapeText(b, []byte(ct))
+			b.WriteString(`"`)
+		}
+		b.WriteString(`>`)
+		xml.EscapeText(b, []byte(s.BaseURL+"/"+s.Favicon))
+		b.WriteString("</Image>\n")
+	}
+	b.WriteString("</OpenSearchDescription>\n")
+	return b.Bytes()
+}
+
+// writeOpenSearch publishes the engine at the site root, or drops the one an
+// earlier build wrote when the site stops answering search: the head's link is
+// gone by then, but a browser auto-detects that path on its own, so a stale file
+// would register a search the site no longer answers.
+func (s *Site) writeOpenSearch(out string) error {
+	p := filepath.Join(out, "opensearch.xml")
+	if !s.SearchEngine() {
+		if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		return nil
+	}
+	return os.WriteFile(p, s.openSearchXML(), 0o644)
+}
+
 // WriteOut writes the rendered site plus embedded assets to out, and copies
-// the non-Markdown source tree (statics, images, PDFs) verbatim.
+// the non-Markdown source tree (statics, images, PDFs) verbatim. The engine
+// file is written last, so it rather than a source file owns that name.
 func (s *Site) WriteOut(out string) error {
 	if err := WriteAssets(out); err != nil {
 		return err
@@ -350,7 +401,10 @@ func (s *Site) WriteOut(out string) error {
 	if err := s.writePages(out); err != nil {
 		return err
 	}
-	return copyStatics(s.Src, out)
+	if err := copyStatics(s.Src, out); err != nil {
+		return err
+	}
+	return s.writeOpenSearch(out)
 }
 
 // writePages renders every page into out without touching assets or

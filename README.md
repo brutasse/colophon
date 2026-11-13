@@ -134,7 +134,7 @@ a key it does not know, which keeps a config shared with another tool usable.
 | `title` | `Docs` | Site name in the `<title>` tag and the sidebar brand |
 | `home-label` | `Docs` | Text of the first breadcrumb |
 | `edit-base` | none | Base URL of the "Edit this page" link; no key means no link |
-| `base-url` | none | Public URL of this site; links to it are reported as non-portable |
+| `base-url` | none | Public URL of this site; links to it are reported as non-portable, and it is the origin the URL bar search engine is registered under (see [URL bar search](#url-bar-search)) |
 | `copyright` | none | Footer line; `{year}` becomes the build year |
 | `logo` | none | File under the source directory, published under `/_assets/` at a name derived from its bytes; fills the sidebar brand box edge-to-edge, the accent being its background |
 | `logo-dark` | none | Same, shown in place of `logo` by the dark theme |
@@ -319,6 +319,23 @@ A platform with no Pagefind release and a network that will not answer both
 say so and build the site without search. A damaged cache entry is thrown away
 and fetched again. Run `scripts/update_pagefind.sh v1.5.3` to move to a newer
 release; it prints the pinned checksums for `pagefind.go`.
+
+### URL bar search
+
+A `base-url` in the config, with a successful index, makes the site a browser
+search engine. Colophon writes `opensearch.xml` to the site root, names it from
+every page's head with a `rel="search"` link, and the engines browsers offer
+there — Firefox's search menu, Chrome's and Edge's search engine settings,
+Safari's website search — point the URL bar at `<base-url>/index.html?q=…`.
+Any page that loads with `?q=` answers it by opening the search modal, the same
+overlay the sidebar trigger opens, pre-filled with the query. The query is also
+written to the URL whenever a search happens, so a search is shareable as a
+link, and closing the modal clears it. The engine's icon is the config's
+`favicon`. The template URL must be
+absolute, so a site with no `base-url` registers no engine and ships neither
+the link nor the file. A build that stops answering search takes both off
+again: browsers auto-detect that path on their own, so a stale file would
+register a search the site no longer answers.
 
 ## Container image
 
