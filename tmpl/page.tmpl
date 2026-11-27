@@ -3,7 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<script>if (localStorage.theme) document.documentElement.dataset.theme = localStorage.theme;</script>
+<meta name="color-scheme" content="light dark">
+<script>document.querySelector('meta[name="color-scheme"]').content = localStorage.theme === 'light' || localStorage.theme === 'dark' ? localStorage.theme : 'light dark';</script>
 <title>{{.Title}} · {{.SiteTitle}}</title>
 {{if .Favicon}}<link rel="icon" href="{{.Prefix}}{{.Favicon}}">{{end}}
 {{if .SearchEngine}}<link rel="search" type="application/opensearchdescription+xml" title="{{.SiteTitle}}" href="{{.Prefix}}opensearch.xml">{{end}}
@@ -56,18 +57,22 @@ watch();
 })();</script>{{end}}
 </head>
 <body class="docs">
+<a class="skip-link" href="#content">Skip to content</a>
 <div class="layout">
-<nav class="sidebar" id="sidebar">
-<a class="brand{{if .Logo}} brand-logo{{end}}{{if .LogoDark}} brand-themed{{end}}" href="{{.Prefix}}index.html">{{if .Logo}}<img src="{{.Prefix}}{{.Logo}}" alt="{{.SiteTitle}}">{{if .LogoDark}}<img class="brand-dark" src="{{.Prefix}}{{.LogoDark}}" alt="{{.SiteTitle}}">{{end}}{{else}}{{.SiteTitle}}{{end}}</a>
-{{if .Search}}<div class="search-row"><pagefind-modal-trigger placeholder="Search docs"></pagefind-modal-trigger></div>{{end}}
+<nav class="sidebar" id="sidebar" popover="manual" aria-label="Site navigation">
+<div class="sidebar-scroller">
+<div class="sidebar-sheet">
+<a class="brand{{if .Logo}} brand-logo{{end}}{{if .LogoDark}} brand-themed{{end}}" href="{{.Prefix}}index.html">{{if .Logo}}<img src="{{.Prefix}}{{.Logo}}" alt="{{.SiteTitle}}"{{if .LogoW}} width="{{.LogoW}}" height="{{.LogoH}}"{{end}}>{{if .LogoDark}}<img class="brand-dark" src="{{.Prefix}}{{.LogoDark}}" alt="{{.SiteTitle}}"{{if .LogoDarkW}} width="{{.LogoDarkW}}" height="{{.LogoDarkH}}"{{end}}>{{end}}{{else}}{{.SiteTitle}}{{end}}</a>
+{{if .Search}}<search class="search-row"><pagefind-modal-trigger placeholder="Search docs"></pagefind-modal-trigger></search>{{end}}
 <div class="navlist">{{.Sidebar}}</div>
 <button class="theme-toggle" type="button" aria-label="Toggle color theme"></button>
+</div>
+</div>
 </nav>
-<div class="scrim" aria-hidden="true"></div>
-<main>
-<div class="crumbs"><button class="nav-toggle" type="button" aria-label="Toggle navigation" aria-controls="sidebar" aria-expanded="false">&#9776;</button><span class="crumbs-path">{{.Crumbs}}</span></div>
+<main tabindex="0">
+<div class="crumbs"><button class="nav-toggle" type="button" aria-label="Toggle navigation" aria-controls="sidebar" aria-expanded="false">&#9776;</button><nav class="crumbs-path" aria-label="Breadcrumbs">{{.Crumbs}}</nav></div>
 {{if .TOC}}<nav class="toc" aria-label="On this page">{{.TOC}}</nav>{{end}}
-<article>{{.Content}}</article>
+<article id="content" tabindex="-1">{{.Content}}</article>
 <nav class="prevnext">{{.PrevNext}}</nav>
 <footer class="pagefoot">{{if .EditBase}}<a href="{{.EditBase}}/{{.EditPath}}">Edit this page</a>{{end}}{{if .Copyright}}<span>© {{.Copyright}}</span>{{end}}</footer>
 </main>

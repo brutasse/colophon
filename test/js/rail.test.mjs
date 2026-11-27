@@ -9,7 +9,9 @@ const LINK = 24; // the height every link is given below
 
 // The fixture's rail holds two links; the case that matters is more headings than the
 // screen, so the built link markup is cloned to lengthen it.
-async function railPage({ headings = 12, clientHeight = 100 } = {}) {
+// native: the index the browser is stood in as reporting via :target-current;
+// -1 (the default, via false) leaves the fallback path to run for real.
+async function railPage({ headings = 12, clientHeight = 100, native = false } = {}) {
   const dom = await loadPage('guide/index.html');
   const { window } = dom;
   const { document } = window;
@@ -39,10 +41,24 @@ async function railPage({ headings = 12, clientHeight = 100 } = {}) {
   // all answer top 0, which reads as scrolled to the end of the page.
   heads.forEach((h) => rect(h, { top: 5000 }));
 
+  if (native) {
+    // jsdom knows the spec's property names but cannot match :target-current, so
+    // the native path is stood in: the detection passes, and the rail answers
+    // which link the browser reports as current.
+    window.CSS.supports = (f) => f === 'scroll-target-group: auto' || f === 'selector(:target-current)';
+    const own = rail.querySelector.bind(rail);
+    rail.querySelector = (sel) => (sel === 'a:target-current' ? links[native] : own(sel));
+  }
+
   const scroll = () => main.dispatchEvent(new window.Event('scroll', { bubbles: true }));
   const highlight = () => links.map((a) => a.classList.contains('active')).indexOf(true);
   runScript(window, 'toc.js');
-  assert.equal(rail.scrollTop, 0, 'a freshly loaded page has not scrolled its rail');
+  if (!native) {
+    // On the fallback path every unplaced heading reads as past the end, so a
+    // fresh page highlights nothing and the rail stays put. The native path
+    // starts from the section the browser already reports, which may move it.
+    assert.equal(rail.scrollTop, 0, 'a freshly loaded page has not scrolled its rail');
+  }
   return { window, document, rail, links, heads, scroll, highlight };
 }
 
@@ -57,6 +73,13 @@ test('one link is highlighted, and it is the heading being read', async () => {
   const active = links.filter((a) => a.classList.contains('active'));
   assert.equal(active.length, 1, 'exactly one');
   assert.equal(links.indexOf(active[0]), 9, 'the last heading to have passed the top');
+  // The visible state is what assistive technology reads, since neither the class
+  // nor :target-current is exposed on its own.
+  assert.equal(active[0].getAttribute('aria-current'), 'true', 'the highlighted link says so');
+  assert.ok(
+    links.every((a, i) => a.getAttribute('aria-current') === (i === 9 ? 'true' : 'false')),
+    'and every other link says it is not',
+  );
 });
 
 test('moving back up moves the highlight back', async () => {
@@ -107,6 +130,16 @@ test('the highlight keeps lead above and below when the rail can hold both', asy
     'the fifth link below ends at the rail edge');
   assert.ok(links[7].getBoundingClientRect().top - rail.scrollTop >= 0,
     'and the fifth link above is still inside the rail');
+});
+
+test('where the browser tracks :target-current, the mirror follows it', async () => {
+  const { links, scroll } = await railPage({ native: 5 });
+  scroll();
+  assert.ok(
+    links.every((a, i) => a.getAttribute('aria-current') === (i === 5 ? 'true' : 'false')),
+    'the state the browser reports is mirrored to aria-current',
+  );
+  assert.equal(links[5].classList.contains('active'), true, 'and the highlight follows it');
 });
 
 test('a page with no rail runs nothing', async () => {

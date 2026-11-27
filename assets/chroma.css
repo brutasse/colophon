@@ -1,42 +1,95 @@
 /* Token colours for the chroma classes petroglyph writes: GitHub's prettylights
-   palette, one block per theme in the shape accentCSS emits for --accent, so a
-   stored data-theme beats the media query and no theme attribute falls back to
-   the light block.
+   palette, in the same shape docs.css and accentCSS use for the theme: the raw
+   values of every token defined once on :root, the two contexts that resolve
+   dark flipping the aliases to the dark raw, and the light-dark() override that
+   covers both.
 
    A token rule names a variable and never a colour, so the two palettes cannot
    drift by one rule; TestChromaPalette checks every variable a rule uses is
-   defined in all three blocks, and that each colour clears AA contrast on the
+   defined in the light block, and that each colour clears AA contrast on the
    surface it is drawn on. Output and prompt text carry no rule at all and take
    the block's own foreground, the way GitHub renders them. */
 
-:root,
-[data-theme="light"] {
-  --code-keyword: #cf222e; --code-entity: #8250df; --code-variable: #953800;
-  --code-tag: #116329; --code-string: #0a3069; --code-constant: #0550ae;
-  --code-comment: #57606a;
-  --code-error: #cf222e; --code-error-bg: #ffebe9;
-  --code-deleted: #86181d; --code-deleted-bg: #ffebe9;
-  --code-inserted: #116329; --code-inserted-bg: #dafbe1;
+:root {
+  color-scheme: light dark;
+  --code-keyword-light: #cf222e; --code-keyword-dark: #ff7b72;
+  --code-entity-light: #8250df; --code-entity-dark: #d2a8ff;
+  --code-variable-light: #953800; --code-variable-dark: #ffa657;
+  --code-tag-light: #116329; --code-tag-dark: #7ee787;
+  --code-string-light: #0a3069; --code-string-dark: #a5d6ff;
+  --code-constant-light: #0550ae; --code-constant-dark: #79c0ff;
+  --code-comment-light: #57606a; --code-comment-dark: #8b949e;
+  --code-error-light: #cf222e; --code-error-dark: #ff7b72;
+  --code-error-bg-light: #ffebe9; --code-error-bg-dark: rgba(248, 81, 73, .15);
+  --code-deleted-light: #86181d; --code-deleted-dark: #ffa198;
+  --code-deleted-bg-light: #ffebe9; --code-deleted-bg-dark: rgba(248, 81, 73, .15);
+  --code-inserted-light: #116329; --code-inserted-dark: #7ee787;
+  --code-inserted-bg-light: #dafbe1; --code-inserted-bg-dark: rgba(63, 185, 80, .15);
+  --code-keyword: var(--code-keyword-light);
+  --code-entity: var(--code-entity-light);
+  --code-variable: var(--code-variable-light);
+  --code-tag: var(--code-tag-light);
+  --code-string: var(--code-string-light);
+  --code-constant: var(--code-constant-light);
+  --code-comment: var(--code-comment-light);
+  --code-error: var(--code-error-light);
+  --code-error-bg: var(--code-error-bg-light);
+  --code-deleted: var(--code-deleted-light);
+  --code-deleted-bg: var(--code-deleted-bg-light);
+  --code-inserted: var(--code-inserted-light);
+  --code-inserted-bg: var(--code-inserted-bg-light);
+}
+
+:root:has(> head > meta[name="color-scheme"][content="dark"]) {
+  --code-keyword: var(--code-keyword-dark);
+  --code-entity: var(--code-entity-dark);
+  --code-variable: var(--code-variable-dark);
+  --code-tag: var(--code-tag-dark);
+  --code-string: var(--code-string-dark);
+  --code-constant: var(--code-constant-dark);
+  --code-comment: var(--code-comment-dark);
+  --code-error: var(--code-error-dark);
+  --code-error-bg: var(--code-error-bg-dark);
+  --code-deleted: var(--code-deleted-dark);
+  --code-deleted-bg: var(--code-deleted-bg-dark);
+  --code-inserted: var(--code-inserted-dark);
+  --code-inserted-bg: var(--code-inserted-bg-dark);
 }
 
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --code-keyword: #ff7b72; --code-entity: #d2a8ff; --code-variable: #ffa657;
-    --code-tag: #7ee787; --code-string: #a5d6ff; --code-constant: #79c0ff;
-    --code-comment: #8b949e;
-    --code-error: #ff7b72; --code-error-bg: rgba(248, 81, 73, .15);
-    --code-deleted: #ffa198; --code-deleted-bg: rgba(248, 81, 73, .15);
-    --code-inserted: #7ee787; --code-inserted-bg: rgba(63, 185, 80, .15);
+  :root:not(:has(> head > meta[name="color-scheme"][content="light"])) {
+    --code-keyword: var(--code-keyword-dark);
+    --code-entity: var(--code-entity-dark);
+    --code-variable: var(--code-variable-dark);
+    --code-tag: var(--code-tag-dark);
+    --code-string: var(--code-string-dark);
+    --code-constant: var(--code-constant-dark);
+    --code-comment: var(--code-comment-dark);
+    --code-error: var(--code-error-dark);
+    --code-error-bg: var(--code-error-bg-dark);
+    --code-deleted: var(--code-deleted-dark);
+    --code-deleted-bg: var(--code-deleted-bg-dark);
+    --code-inserted: var(--code-inserted-dark);
+    --code-inserted-bg: var(--code-inserted-bg-dark);
   }
 }
 
-[data-theme="dark"] {
-  --code-keyword: #ff7b72; --code-entity: #d2a8ff; --code-variable: #ffa657;
-  --code-tag: #7ee787; --code-string: #a5d6ff; --code-constant: #79c0ff;
-  --code-comment: #8b949e;
-  --code-error: #ff7b72; --code-error-bg: rgba(248, 81, 73, .15);
-  --code-deleted: #ffa198; --code-deleted-bg: rgba(248, 81, 73, .15);
-  --code-inserted: #7ee787; --code-inserted-bg: rgba(63, 185, 80, .15);
+@supports (color: light-dark(white, black)) {
+  :root:not(:has(> head > meta[name="color-scheme"][content="light"])) {
+    --code-keyword: light-dark(var(--code-keyword-light), var(--code-keyword-dark));
+    --code-entity: light-dark(var(--code-entity-light), var(--code-entity-dark));
+    --code-variable: light-dark(var(--code-variable-light), var(--code-variable-dark));
+    --code-tag: light-dark(var(--code-tag-light), var(--code-tag-dark));
+    --code-string: light-dark(var(--code-string-light), var(--code-string-dark));
+    --code-constant: light-dark(var(--code-constant-light), var(--code-constant-dark));
+    --code-comment: light-dark(var(--code-comment-light), var(--code-comment-dark));
+    --code-error: light-dark(var(--code-error-light), var(--code-error-dark));
+    --code-error-bg: light-dark(var(--code-error-bg-light), var(--code-error-bg-dark));
+    --code-deleted: light-dark(var(--code-deleted-light), var(--code-deleted-dark));
+    --code-deleted-bg: light-dark(var(--code-deleted-bg-light), var(--code-deleted-bg-dark));
+    --code-inserted: light-dark(var(--code-inserted-light), var(--code-inserted-dark));
+    --code-inserted-bg: light-dark(var(--code-inserted-bg-light), var(--code-inserted-bg-dark));
+  }
 }
 
 /* var(--code-bg) is also what article pre paints an unhighlighted fence with, so

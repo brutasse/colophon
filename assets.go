@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/sha256"
 	"embed"
+	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"html/template"
@@ -165,12 +166,77 @@ func (s *Site) hashedStatics() error {
 		// The address carries the file name a reader recognizes, not the directory
 		// the site kept it in.
 		urls[i] = ix.publish(path.Base(rel), b).path
+		// A raster logo reserves its box in the brand, so the page does not shift
+		// when it loads; the size is sniffed from the file, not the config.
+		switch i {
+		case 0:
+			s.LogoW, s.LogoH = imageDims(b)
+		case 1:
+			s.LogoDarkW, s.LogoDarkH = imageDims(b)
+		}
 	}
 	s.staticMu.Lock()
 	s.statics = ix
 	s.staticMu.Unlock()
 	s.Logo, s.LogoDark, s.Favicon = urls[0], urls[1], urls[2]
 	return nil
+}
+
+// imageDims sniffs the intrinsic size of a raster image, so a raster logo can
+// reserve its box in the brand rather than shifting the page when it loads.
+// An SVG carries its own viewBox and needs no attribute, and so does anything
+// the sniff does not recognise: it answers zero.
+func imageDims(b []byte) (int, int) {
+	switch {
+	case len(b) >= 24 && b[0] == 0x89 && b[1] == 'P' && b[2] == 'N' && b[3] == 'G':
+		return int(binary.BigEndian.Uint32(b[16:20])), int(binary.BigEndian.Uint32(b[20:24]))
+	case len(b) >= 10 && b[0] == 'G' && b[1] == 'I' && b[2] == 'F':
+		return int(binary.LittleEndian.Uint16(b[6:8])), int(binary.LittleEndian.Uint16(b[8:10]))
+	case len(b) >= 16 && string(b[0:4]) == "RIFF" && string(b[8:12]) == "WEBP":
+		return webpDims(b)
+	case len(b) >= 4 && b[0] == 0xFF && b[1] == 0xD8:
+		return jpegDims(b)
+	}
+	return 0, 0
+}
+
+// webpDims reads the size from the chunk that follows the RIFF/WEBP header.
+func webpDims(b []byte) (int, int) {
+	switch string(b[12:16]) {
+	case "VP8 ": // lossy: 14-bit fields after the frame tag and start code
+		if len(b) >= 30 {
+			return int(binary.LittleEndian.Uint16(b[26:28])) & 0x3FFF,
+				int(binary.LittleEndian.Uint16(b[28:30])) & 0x3FFF
+		}
+	case "VP8L": // lossless: a version bit, then 14 bits per field
+		if len(b) >= 25 {
+			v := binary.LittleEndian.Uint32(b[21:25])
+			return int(v>>1&0x3FFF) + 1, int(v>>15&0x3FFF) + 1
+		}
+	case "VP8X": // extended: 24-bit fields, each one more than the size
+		if len(b) >= 30 {
+			w := uint32(b[24]) | uint32(b[25])<<8 | uint32(b[26])<<16
+			h := uint32(b[27]) | uint32(b[28])<<8 | uint32(b[29])<<16
+			return int(w) + 1, int(h) + 1
+		}
+	}
+	return 0, 0
+}
+
+// jpegDims finds the first SOF marker; its segment carries the size. The DHT,
+// JPG and DAC markers share the SOF range but no size, so they are skipped.
+func jpegDims(b []byte) (int, int) {
+	for i := 2; i+9 <= len(b); i++ {
+		if b[i] != 0xFF {
+			continue
+		}
+		m := b[i+1]
+		if m == 0xFF || m < 0xC0 || m > 0xCF || m == 0xC4 || m == 0xC8 || m == 0xCC {
+			continue
+		}
+		return int(binary.BigEndian.Uint16(b[i+7 : i+9])), int(binary.BigEndian.Uint16(b[i+5 : i+7]))
+	}
+	return 0, 0
 }
 
 // writeStatics puts the config-named assets into out/_assets/ beside the
@@ -196,7 +262,11 @@ type pageData struct {
 	Copyright    string
 	EditBase     string
 	Logo         string
+	LogoW        int
+	LogoH        int
 	LogoDark     string
+	LogoDarkW    int
+	LogoDarkH    int
 	Favicon      string
 	Content      template.HTML
 	Sidebar      template.HTML

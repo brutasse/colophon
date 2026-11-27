@@ -224,20 +224,21 @@ func (s *Site) navSectionLists(p *Page, body string) string {
 
 func (s *Site) renderCrumbs(p *Page) string {
 	var parts []string
-	parts = append(parts, fmt.Sprintf(`<a href="%sindex.html">%s</a>`, p.Prefix, html.EscapeString(s.HomeLabel)))
+	parts = append(parts, fmt.Sprintf(`<li><a href="%sindex.html">%s</a></li>`, p.Prefix, html.EscapeString(s.HomeLabel)))
 	for _, a := range s.chain[p.Rel] {
 		if a == p.Rel {
-			continue // index page: it appears as the plain tail below
+			continue // index page: it appears as the linked tail below
 		}
 		title := a
 		if pp, ok := s.Pages[a]; ok {
 			title = pp.Title
 		}
-		parts = append(parts, fmt.Sprintf(`<a href="%s%s">%s</a>`, p.Prefix, html.EscapeString(outPath(a)), html.EscapeString(title)))
+		parts = append(parts, fmt.Sprintf(`<li><a href="%s%s">%s</a></li>`, p.Prefix, html.EscapeString(outPath(a)), html.EscapeString(title)))
 	}
-	// the current page closes the trail, unlinked
-	parts = append(parts, fmt.Sprintf(`<span class="here">%s</span>`, html.EscapeString(p.Title)))
-	return strings.Join(parts, `<span class="sep">&gt;</span>`)
+	// the current page closes the trail, linked to itself and marked, so the
+	// trail stays one assistive technology can walk
+	parts = append(parts, fmt.Sprintf(`<li><a href="%s" aria-current="page">%s</a></li>`, p.Prefix+p.OutPath, html.EscapeString(p.Title)))
+	return `<ol>` + strings.Join(parts, "") + `</ol>`
 }
 
 func (s *Site) renderPrevNext(p *Page) string {
@@ -255,8 +256,8 @@ func (s *Site) renderPrevNext(p *Page) string {
 // tocRe captures h1/h2/h3 headings with level, id and label (the label stops at
 // the heading-anchor link the renderer appends); tocH23 is the outline of a page
 // with no sections of its own, which takes h1s alone to be its title.
-var tocRe = regexp.MustCompile(`(?s)<h([123]) id="([^"]+)">(.*?)<a class="heading-anchor"`)
-var tocH23 = regexp.MustCompile(`(?s)<h([23]) id="([^"]+)">(.*?)<a class="heading-anchor"`)
+var tocRe = regexp.MustCompile(`(?s)<h([123]) id="([^"]+)"[^>]*>(.*?)<a class="heading-anchor"`)
+var tocH23 = regexp.MustCompile(`(?s)<h([23]) id="([^"]+)"[^>]*>(.*?)<a class="heading-anchor"`)
 
 // renderTOC builds the right-hand "On this page" rail from the page's
 // headings; fewer than two headings means no rail. Labels are the
@@ -291,23 +292,23 @@ func (s *Site) renderTOC(p *Page) string {
 	return `<p class="toc-title">On this page</p>` + strings.Join(items, "")
 }
 
-// accentCSS renders the config's accent overrides for the theme's three
-// selector contexts; empty when no accent key is configured (docs.css
-// defaults apply). Values are hex-validated in NewSite, so interpolation
-// is safe.
+// accentCSS renders the config's accent overrides for the theme's selector
+// contexts: the light raw value sits in the :root block the palette declares,
+// and the dark raw value must reach the two contexts that resolve dark, the
+// pinned one and the system one. Empty when no accent key is configured
+// (docs.css defaults apply). Values are hex-validated in NewSite, so
+// interpolation is safe.
 func (s *Site) accentCSS() string {
 	if s.Accent == "" && s.AccentDark == "" {
 		return ""
 	}
 	var b strings.Builder
 	if s.Accent != "" {
-		fmt.Fprintf(&b, ":root, [data-theme=\"light\"] { --accent: %s; }\n", s.Accent)
-		fmt.Fprintf(&b, "@media (prefers-color-scheme: dark) { :root:not([data-theme=\"light\"]) { --accent: %s; } }\n", s.Accent)
-		fmt.Fprintf(&b, "[data-theme=\"dark\"] { --accent: %s; }\n", s.Accent)
+		fmt.Fprintf(&b, ":root { --accent-light: %s; --accent-dark: %s; }\n", s.Accent, s.Accent)
 	}
 	if s.AccentDark != "" {
-		fmt.Fprintf(&b, "@media (prefers-color-scheme: dark) { :root:not([data-theme=\"light\"]) { --accent: %s; } }\n", s.AccentDark)
-		fmt.Fprintf(&b, "[data-theme=\"dark\"] { --accent: %s; }\n", s.AccentDark)
+		fmt.Fprintf(&b, ":root:has(> head > meta[name=\"color-scheme\"][content=\"dark\"]) { --accent-dark: %s; }\n", s.AccentDark)
+		fmt.Fprintf(&b, "@media (prefers-color-scheme: dark) { :root:not(:has(> head > meta[name=\"color-scheme\"][content=\"light\"])) { --accent-dark: %s; } }\n", s.AccentDark)
 	}
 	return b.String()
 }
@@ -320,7 +321,11 @@ func (s *Site) wrapPage(p *Page) ([]byte, error) {
 		Copyright:    s.Copyright,
 		EditBase:     s.EditBase,
 		Logo:         s.Logo,
+		LogoW:        s.LogoW,
+		LogoH:        s.LogoH,
 		LogoDark:     s.LogoDark,
+		LogoDarkW:    s.LogoDarkW,
+		LogoDarkH:    s.LogoDarkH,
 		Favicon:      s.Favicon,
 		Content:      template.HTML(p.Body),
 		Sidebar:      template.HTML(s.renderSidebar(p)),

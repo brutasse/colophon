@@ -59,7 +59,11 @@ type Site struct {
 	BaseURL    string // base-url with scheme, no trailing slash; the engine's template URL is built on it
 	Copyright  string // "{year}" already substituted; empty = no footer line
 	Logo       string // content-addressed URL; empty = brand is the site title text
+	LogoW      int    // intrinsic size of a raster logo; 0 = an SVG, which needs none
+	LogoH      int
 	LogoDark   string // same, shown in place of Logo by the dark theme blocks
+	LogoDarkW  int
+	LogoDarkH  int
 	Favicon    string // content-addressed URL; empty = no favicon link
 	Accent     string // hex override of the light --accent; empty = docs.css default
 	AccentDark string // hex override of the dark --accent; empty = docs.css default
@@ -440,7 +444,12 @@ func rawFrontMatter(src string) (map[string]string, string) {
 
 var (
 	headingRe = regexp.MustCompile(`(?s)<h([1-6])[^>]*\bid="([^"]+)"[^>]*>(.*?)</h[1-6]>`)
-	idRe      = regexp.MustCompile(`id="([^"]+)"`)
+	// every heading the rail and the page TOC point at; the tabindex keeps it
+	// out of the tab order but lets the heading take focus after a fragment
+	// navigation. The match stops after the id attribute, so the replacement
+	// appends the tabindex and the rest of the tag is untouched.
+	headingTabindexRe = regexp.MustCompile(`(?s)<h([1-6])([^>]*\bid="[^"]+")`)
+	idRe              = regexp.MustCompile(`id="([^"]+)"`)
 	// <a name="x"> is the custom-anchor idiom GitHub documents, and a fragment
 	// names it as well as an id, so the check gate counts it as a target.
 	anchorNameRe = regexp.MustCompile(`<a\b[^>]*\bname="([^"]+)"`)
@@ -503,6 +512,8 @@ func (s *Site) renderPage(rel, raw string) *Page {
 	for _, m := range anchorNameRe.FindAllStringSubmatch(h, -1) {
 		p.IDs[m[1]] = true
 	}
+	// the skip link's target is chrome the template adds, not content the page writes
+	p.IDs["content"] = true
 	p.Title = meta["title"]
 	if p.Title == "" && len(p.Headings) > 0 {
 		p.Title = p.Headings[0].Text
@@ -566,6 +577,10 @@ func (s *Site) finalize(p *Page) {
 	if p.TOCDepth >= 0 {
 		body = strings.Replace(body, "</h1>", "</h1>\n"+s.pageTOC(p, p.TOCDepth), 1)
 	}
+	// A rail or page-TOC anchor lands on a heading; without a tabindex the jump
+	// scrolls the page but focus stays where it was, so a keyboard reader would
+	// have to find their way back down to keep scrolling.
+	body = headingTabindexRe.ReplaceAllString(body, `<h$1$2 tabindex="-1"`)
 	p.Body = []byte(body)
 }
 

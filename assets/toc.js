@@ -28,6 +28,30 @@
     }
     if (rail.scrollTop < lo) rail.scrollTop = lo; else if (rail.scrollTop > hi) rail.scrollTop = hi;
   }
+  // The highlight must mirror in aria-current: neither :target-current nor the
+  // fallback class is exposed to assistive technology on its own.
+  function mark(i) {
+    links.forEach(function (l, j) {
+      l.classList.toggle('active', j === i);
+      l.setAttribute('aria-current', j === i ? 'true' : 'false');
+    });
+    if (i >= 0) keep(i);
+  }
+  // The property and the pseudo-class ship together; asking for both keeps a
+  // browser that knows one but not the other on the fallback.
+  if (CSS.supports('scroll-target-group: auto') && CSS.supports('selector(:target-current)')) {
+    // The browser that ships scroll-target-group tracks which section the rail's
+    // markers point at, and :target-current does the highlighting in CSS; this
+    // mirrors the state to aria-current and keeps the highlight scrolled into the
+    // rail.
+    var sync = function () {
+      mark(links.indexOf(rail.querySelector('a:target-current')));
+    };
+    sync();
+    document.addEventListener('scrollend', sync);
+    main.addEventListener('scroll', sync, { passive: true });
+    return;
+  }
   // The heading whose top has passed the sticky breadcrumb row is the one being read.
   function sync() {
     var top = main.getBoundingClientRect().top;
@@ -35,8 +59,7 @@
     for (var i = 0; i < heads.length; i++) {
       if (heads[i] && heads[i].getBoundingClientRect().top - top <= 64) act = i;
     }
-    links.forEach(function (l, i) { l.classList.toggle('active', i === act); });
-    if (act >= 0) keep(act);
+    mark(act);
   }
   main.addEventListener('scroll', sync, { passive: true });
   sync();
